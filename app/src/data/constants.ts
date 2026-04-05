@@ -35,6 +35,13 @@ export const STEM_PREFETCH_MULTIPLIER = 1.5; // start loading at 1.5x audibility
 export const DEEP_SPACE_DRONE_MAX_GAIN = 0.3;
 export const CROSSFADE_SPEED = 0.02; // gain change per frame (~2-5 seconds full crossfade at 60fps)
 
+// Performance budgets
+export const MAX_RENDERED_BODIES = 50; // max bodies with visible meshes
+export const MAX_LOADED_TEXTURES = 20; // max textures in GPU memory
+export const MAX_DECODED_AUDIO = 15; // max decoded audio buffers in memory
+export const TARGET_FRAME_TIME_MS = 16.7; // 60fps target
+export const STEM_EVICTION_DELAY_MS = 30_000; // evict silent stems after 30s
+
 // Starfield
 export const STARFIELD_COUNT = 15_000;
 export const STARFIELD_RADIUS = 50_000; // units

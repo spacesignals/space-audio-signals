@@ -22,6 +22,7 @@ export class AudioEngine {
   private droneGain: GainNode | null = null;
   private audioBasePath = '/audio/';
   private started = false;
+  private lastEvictionCheck = 0;
 
   constructor(bodies: CelestialBodyConfig[]) {
     this.bodies = bodies;
@@ -158,6 +159,13 @@ export class AudioEngine {
         this.setStemGains(bodyId, 0);
       }
     }
+
+    // Evict stale stems every 5 seconds
+    const now = performance.now();
+    if (now - this.lastEvictionCheck > 5000) {
+      this.lastEvictionCheck = now;
+      this.evictStaleSteams();
+    }
   }
 
   /**
@@ -220,7 +228,7 @@ export class AudioEngine {
     for (const url of stemUrls) {
       const stemId = `${config.id}:${url}`;
       const existing = this.stems.get(stemId);
-      if (existing && existing.state !== 'unloaded') continue;
+      if (existing && existing.state !== 'unloaded' && existing.state !== 'evicted' && existing.state !== 'failed') continue;
 
       const stem: AudioStem = {
         id: stemId,
@@ -230,13 +238,14 @@ export class AudioEngine {
         gainNode: null,
         state: 'loading',
         url: this.audioBasePath + url,
+        lastActiveTime: performance.now(),
       };
       this.stems.set(stemId, stem);
 
       // Load async, don't block the frame
       this.loadStem(stem).catch(() => {
-        // Error handling: skip stem, keep playing others
-        stem.state = 'unloaded';
+        // Error handling: mark failed, skip
+        stem.state = 'failed';
         console.warn(`Failed to load stem: ${stem.url}`);
       });
     }
@@ -271,7 +280,7 @@ export class AudioEngine {
       stem.state = 'ready';
     } catch (err) {
       console.warn(`Stem decode failed for ${stem.url}:`, err);
-      stem.state = 'unloaded';
+      stem.state = 'failed';
     }
   }
 
@@ -279,14 +288,59 @@ export class AudioEngine {
    * Smoothly crossfade all stems for a body to the target gain.
    */
   private setStemGains(bodyId: string, targetGain: number): void {
+    const now = performance.now();
     for (const [, stem] of this.stems) {
       if (stem.bodyId !== bodyId || !stem.gainNode) continue;
 
       const current = stem.gainNode.gain.value;
       const diff = targetGain - current;
-      // Smooth crossfade
       stem.gainNode.gain.value = current + diff * CROSSFADE_SPEED;
+
+      if (stem.gainNode.gain.value > 0.001) {
+        stem.lastActiveTime = now;
+      }
     }
+  }
+
+  /**
+   * Evict stems that have been silent for over 30 seconds.
+   * Frees AudioBuffer memory for bodies the camera has moved far from.
+   */
+  private evictStaleSteams(): void {
+    const now = performance.now();
+    const EVICT_AFTER_MS = 30_000;
+
+    for (const [id, stem] of this.stems) {
+      if (stem.state !== 'ready') continue;
+      if (now - stem.lastActiveTime < EVICT_AFTER_MS) continue;
+      if (stem.gainNode && stem.gainNode.gain.value > 0.001) continue;
+
+      // Evict: stop source, disconnect, free buffer
+      try { stem.source?.stop(); } catch { /* ignore */ }
+      stem.source?.disconnect();
+      stem.gainNode?.disconnect();
+      stem.source = null;
+      stem.gainNode = null;
+      stem.buffer = null;
+      stem.state = 'evicted';
+      this.stems.delete(id);
+    }
+  }
+
+  getActiveStems(): number {
+    let count = 0;
+    for (const [, stem] of this.stems) {
+      if (stem.gainNode && stem.gainNode.gain.value > 0.001) count++;
+    }
+    return count;
+  }
+
+  getLoadedStems(): number {
+    let count = 0;
+    for (const [, stem] of this.stems) {
+      if (stem.state === 'ready') count++;
+    }
+    return count;
   }
 
   setMasterVolume(volume: number): void {

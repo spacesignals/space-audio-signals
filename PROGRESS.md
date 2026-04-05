@@ -51,3 +51,22 @@
 3. Test the core mechanic: fly Jupiter to Saturn, feel the audio shift
 4. Run `/plan-eng-review` before Phase 2
 5. Add tests for gain curves, ephemeris, navigation
+
+## Pre-Phase 2 — Scaling and Architecture
+
+### Scaling action points
+- Add a thin orchestration/state layer so AudioEngine, Navigation, SolarSystem, and HUD communicate through one coordinator rather than ad hoc cross-calls in main.ts.
+- Define performance budgets now for render loop time, active labels, active audio stems, and texture memory before increasing body count.
+- Add instrumentation for FPS, frame time, active body count, loaded textures, and decoded audio count so Phase 2 scaling decisions are based on measurements.
+- Decide the lifecycle rules for bodies entering and leaving relevance range: render activation, label activation, audio preload, audio decode, and cleanup.
+- Keep data/bodies.ts purely declarative and move any branching logic into engine/services so future body additions stay content-driven.
+- Introduce a clear asset-state model for each resource: unloaded -> loading -> ready -> failed -> evicted.
+- Create one mobile-class performance test target early and use it as the baseline for all scaling decisions.
+
+### Pre-Phase 2 checklist
+- [ ] Engineering review completed, with module boundaries and hidden coupling explicitly checked.
+- [ ] Tests added for gain curves, ephemeris updates, focus-travel, and camera transition edge cases.
+- [ ] Performance baseline captured on current Phase 1 build before adding more bodies.
+- [ ] Resource cleanup verified for scene objects, audio nodes, textures, and event listeners during repeated navigation flows.
+- [ ] Debug mode available for profiling, showing active stems, active labels, loaded assets, and timing metrics.
+- [ ] Mobile assumptions sanity-checked on a real device or constrained environment before committing to Phase 2 scope.

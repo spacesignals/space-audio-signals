@@ -28,8 +28,9 @@ export interface AudioStem {
   buffer: AudioBuffer | null;
   source: AudioBufferSourceNode | null;
   gainNode: GainNode | null;
-  state: 'unloaded' | 'loading' | 'ready' | 'playing' | 'suspended';
+  state: 'unloaded' | 'loading' | 'ready' | 'failed' | 'evicted';
   url: string;
+  lastActiveTime: number; // performance.now() when gain was last > 0
 }
 
 export interface NavigationMode {

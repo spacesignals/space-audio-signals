@@ -5,6 +5,7 @@ import { Navigation } from './engine/Navigation';
 import { PostProcessing } from './engine/PostProcessing';
 import { AudioEngine } from './audio/AudioEngine';
 import { HUD } from './ui/HUD';
+import { PerformanceMonitor } from './engine/PerformanceMonitor';
 import { BODIES } from './data/bodies';
 import { CAMERA_FOV, CAMERA_NEAR, CAMERA_FAR, KM_PER_UNIT } from './data/constants';
 
@@ -38,6 +39,7 @@ class App {
   private postProcessing: PostProcessing;
   private audioEngine: AudioEngine;
   private hud: HUD;
+  private perfMonitor: PerformanceMonitor;
 
   private clock = new THREE.Clock();
   private running = false;
@@ -75,6 +77,7 @@ class App {
     this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera);
     this.audioEngine = new AudioEngine(BODIES);
     this.hud = new HUD();
+    this.perfMonitor = new PerformanceMonitor();
 
     // Init
     this.solarSystem.initBodies(BODIES);
@@ -120,6 +123,11 @@ class App {
       this.solarSystem.setLabelsVisible(visible);
     });
 
+    // Debug toggle
+    this.hud.setOnToggleDebug(() => {
+      this.perfMonitor.toggle();
+    });
+
     // Resize
     window.addEventListener('resize', () => this.onResize());
 
@@ -129,6 +137,7 @@ class App {
 
   private animate = (): void => {
     requestAnimationFrame(this.animate);
+    this.perfMonitor.beginFrame();
 
     const deltaTime = this.clock.getDelta();
     const now = performance.now();
@@ -157,6 +166,15 @@ class App {
 
     // Render with post-processing (bloom)
     this.postProcessing.render();
+
+    // Update perf monitor
+    this.perfMonitor.setResourceCounts({
+      activeStems: this.audioEngine.getActiveStems(),
+      loadedStems: this.audioEngine.getLoadedStems(),
+      activeBodies: this.solarSystem.getBodyCount(),
+      texturesLoaded: this.solarSystem.getLoadedTextureCount(),
+    });
+    this.perfMonitor.endFrame();
   };
 
   private updateHUD(positions: Map<string, [number, number, number]>): void {

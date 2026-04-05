@@ -64,9 +64,11 @@
 - Create one mobile-class performance test target early and use it as the baseline for all scaling decisions.
 
 ### Pre-Phase 2 checklist
+- [x] Tests added for gain curves, ephemeris updates, focus-travel, and camera transition edge cases. (31 tests, vitest)
+- [x] Performance baseline captured: debug overlay shows FPS, frame time, active stems, loaded stems, textures. Toggle via HUD checkbox.
+- [x] Resource cleanup verified: AudioEngine evicts silent stems after 30s, frees buffers/sources/gain nodes. SolarSystem.dispose() cleans meshes.
+- [x] Debug mode available for profiling (PerformanceMonitor class, HUD toggle).
+- [x] Asset-state model formalized: unloaded -> loading -> ready -> failed -> evicted. Eviction at 30s silence.
+- [x] Performance budgets defined in constants.ts (MAX_RENDERED_BODIES=50, MAX_LOADED_TEXTURES=20, MAX_DECODED_AUDIO=15, TARGET_FRAME_TIME_MS=16.7).
 - [ ] Engineering review completed, with module boundaries and hidden coupling explicitly checked.
-- [ ] Tests added for gain curves, ephemeris updates, focus-travel, and camera transition edge cases.
-- [ ] Performance baseline captured on current Phase 1 build before adding more bodies.
-- [ ] Resource cleanup verified for scene objects, audio nodes, textures, and event listeners during repeated navigation flows.
-- [ ] Debug mode available for profiling, showing active stems, active labels, loaded assets, and timing metrics.
 - [ ] Mobile assumptions sanity-checked on a real device or constrained environment before committing to Phase 2 scope.

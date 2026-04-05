@@ -281,6 +281,19 @@ export class SolarSystem {
     this.scene.add(stars);
   }
 
+  getBodyCount(): number {
+    return this.bodyMeshes.size;
+  }
+
+  getLoadedTextureCount(): number {
+    let count = 0;
+    for (const [, body] of this.bodyMeshes) {
+      const mat = body.mesh.material;
+      if (mat instanceof THREE.MeshStandardMaterial && mat.map) count++;
+    }
+    return count;
+  }
+
   dispose(): void {
     for (const [, body] of this.bodyMeshes) {
       body.mesh.geometry.dispose();

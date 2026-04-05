@@ -18,6 +18,7 @@ export class HUD {
   private onTour: (() => void) | null = null;
   private onTopView: (() => void) | null = null;
   private onToggleLabels: ((visible: boolean) => void) | null = null;
+  private onToggleDebug: (() => void) | null = null;
 
   constructor() {
     this.container = document.createElement('div');
@@ -220,6 +221,18 @@ export class HUD {
     labelToggle.appendChild(document.createTextNode('Labels'));
     this.bodyListEl.appendChild(labelToggle);
 
+    const debugToggle = document.createElement('label');
+    debugToggle.className = 'hud-toggle';
+    const debugCheckbox = document.createElement('input');
+    debugCheckbox.type = 'checkbox';
+    debugCheckbox.checked = false;
+    debugCheckbox.addEventListener('change', () => {
+      this.onToggleDebug?.();
+    });
+    debugToggle.appendChild(debugCheckbox);
+    debugToggle.appendChild(document.createTextNode('Debug'));
+    this.bodyListEl.appendChild(debugToggle);
+
     for (const body of bodies) {
       const btn = document.createElement('button');
       btn.textContent = body.name;
@@ -291,6 +304,10 @@ export class HUD {
 
   setOnToggleLabels(cb: (visible: boolean) => void): void {
     this.onToggleLabels = cb;
+  }
+
+  setOnToggleDebug(cb: () => void): void {
+    this.onToggleDebug = cb;
   }
 
   setVisible(visible: boolean): void {

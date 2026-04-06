@@ -28,9 +28,18 @@ export interface AudioStem {
   buffer: AudioBuffer | null;
   source: AudioBufferSourceNode | null;
   gainNode: GainNode | null;
-  state: 'unloaded' | 'loading' | 'ready' | 'failed' | 'evicted';
+  state: 'unloaded' | 'loading' | 'ready' | 'failed' | 'permanently-failed' | 'evicted';
   url: string;
   lastActiveTime: number; // performance.now() when gain was last > 0
+  failedAt: number; // performance.now() when last failure occurred
+  retryCount: number; // number of retry attempts after first failure
+}
+
+/** Pre-computed distance from camera to a body, shared across systems. */
+export interface BodyDistance {
+  bodyId: string;
+  distanceKm: number;
+  config: CelestialBodyConfig;
 }
 
 export interface NavigationMode {

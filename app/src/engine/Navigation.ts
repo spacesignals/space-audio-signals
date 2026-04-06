@@ -52,9 +52,17 @@ export class Navigation {
   private onTourComplete: (() => void) | null = null;
   private getBodyPosition: ((id: string) => THREE.Vector3 | null) | null = null;
 
-  // Drift (zero-gravity feel)
+  // Drift (zero-gravity feel) — offset only, never mutates camera.position
   private driftTime = 0;
+  private driftOffset = new THREE.Vector3();
+  private driftApplied = false;
   private reducedMotion = false;
+
+  // Pre-allocated reusable vectors for updateFreeFlight (avoid GC pressure)
+  private _direction = new THREE.Vector3();
+  private _forward = new THREE.Vector3();
+  private _right = new THREE.Vector3();
+  private _euler = new THREE.Euler();
 
   constructor(camera: THREE.PerspectiveCamera, canvas: HTMLCanvasElement) {
     this.camera = camera;
@@ -187,37 +195,39 @@ export class Navigation {
       this.updateTour();
     }
 
-    // Subtle drift for zero-gravity feel (not during automated movements)
+    // Compute drift offset (oscillating, never accumulated)
     if (!this.reducedMotion && this.mode === 'free-flight') {
       this.driftTime += deltaTime;
-      const driftX = Math.sin(this.driftTime * CAMERA_DRIFT_FREQUENCY) * CAMERA_DRIFT_AMPLITUDE;
-      const driftY = Math.cos(this.driftTime * CAMERA_DRIFT_FREQUENCY * 0.7) * CAMERA_DRIFT_AMPLITUDE;
-      this.camera.position.x += driftX;
-      this.camera.position.y += driftY;
+      this.driftOffset.set(
+        Math.sin(this.driftTime * CAMERA_DRIFT_FREQUENCY) * CAMERA_DRIFT_AMPLITUDE,
+        Math.cos(this.driftTime * CAMERA_DRIFT_FREQUENCY * 0.7) * CAMERA_DRIFT_AMPLITUDE,
+        0
+      );
+    } else {
+      this.driftOffset.set(0, 0, 0);
     }
   }
 
   private updateFreeFlight(deltaTime: number): void {
-    // Apply rotation
-    const euler = new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ');
-    this.camera.quaternion.setFromEuler(euler);
+    // Apply rotation (reuse euler)
+    this._euler.set(this.pitch, this.yaw, 0, 'YXZ');
+    this.camera.quaternion.setFromEuler(this._euler);
 
-    // Movement direction from keys
-    const direction = new THREE.Vector3();
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
-    const up = new THREE.Vector3(0, 1, 0);
+    // Movement direction from keys (reuse pre-allocated vectors)
+    this._direction.set(0, 0, 0);
+    this._forward.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    this._right.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
 
-    if (this.keys.has('w') || this.keys.has('arrowup')) direction.add(forward);
-    if (this.keys.has('s') || this.keys.has('arrowdown')) direction.sub(forward);
-    if (this.keys.has('a') || this.keys.has('arrowleft')) direction.sub(right);
-    if (this.keys.has('d') || this.keys.has('arrowright')) direction.add(right);
-    if (this.keys.has('q') || this.keys.has(' ')) direction.add(up);
-    if (this.keys.has('e') || this.keys.has('shift')) direction.sub(up);
+    if (this.keys.has('w') || this.keys.has('arrowup')) this._direction.add(this._forward);
+    if (this.keys.has('s') || this.keys.has('arrowdown')) this._direction.sub(this._forward);
+    if (this.keys.has('a') || this.keys.has('arrowleft')) this._direction.sub(this._right);
+    if (this.keys.has('d') || this.keys.has('arrowright')) this._direction.add(this._right);
+    if (this.keys.has('q') || this.keys.has(' ')) this._direction.y += 1;
+    if (this.keys.has('e') || this.keys.has('shift')) this._direction.y -= 1;
 
-    if (direction.lengthSq() > 0) {
-      direction.normalize();
-      this.camera.position.addScaledVector(direction, this.speed * deltaTime);
+    if (this._direction.lengthSq() > 0) {
+      this._direction.normalize();
+      this.camera.position.addScaledVector(this._direction, this.speed * deltaTime);
     }
   }
 
@@ -412,6 +422,23 @@ export class Navigation {
     if (this.tourPhase === 'travel') {
       if (!this.travelStart || !this.travelEnd || !this.travelLookTarget) return;
 
+      // Live-track the target body's position during travel (planets move)
+      const wp = this.tourWaypoints[this.tourIndex];
+      const livePos = this.getBodyPosition?.(wp.bodyId);
+      if (livePos) {
+        // Recompute destination: same approach direction, same distance, updated center
+        const fovRad = (this.camera.fov * Math.PI) / 180;
+        const halfTargetAngle = (fovRad / 3) / 2;
+        const distance = wp.visualRadius > 0
+          ? wp.visualRadius / Math.tan(halfTargetAngle)
+          : 0.5;
+        const dir = this.travelStart.clone().sub(livePos);
+        if (dir.lengthSq() < 0.001) dir.set(1, 0.3, 0);
+        dir.normalize();
+        this.travelEnd.copy(livePos).addScaledVector(dir, distance);
+        this.travelLookTarget.copy(livePos);
+      }
+
       const elapsed = performance.now() - this.travelStartTime;
       let t = Math.min(elapsed / this.travelDuration, 1);
       t = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -481,12 +508,34 @@ export class Navigation {
     return this.speed;
   }
 
+  /**
+   * Apply drift offset to camera position before rendering.
+   * Must call removeDrift() after render to restore clean position.
+   */
+  applyDrift(): void {
+    if (!this.driftApplied) {
+      this.camera.position.add(this.driftOffset);
+      this.driftApplied = true;
+    }
+  }
+
+  /**
+   * Remove drift offset from camera position after rendering.
+   */
+  removeDrift(): void {
+    if (this.driftApplied) {
+      this.camera.position.sub(this.driftOffset);
+      this.driftApplied = false;
+    }
+  }
+
   getCameraPositionKm(): [number, number, number] {
     const p = this.camera.position;
     const KM = 1e6;
     return [p.x * KM, p.y * KM, p.z * KM];
   }
 
+  /** Returns the clean (non-drifted) camera position in Three.js units. */
   getCameraPositionUnits(): [number, number, number] {
     const p = this.camera.position;
     return [p.x, p.y, p.z];

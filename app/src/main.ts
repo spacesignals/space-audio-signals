@@ -129,6 +129,20 @@ class App {
       this.perfMonitor.toggle();
     });
 
+    // Background audio toggle (default: enabled — audio continues when tab hidden)
+    let backgroundAudioEnabled = true;
+    this.hud.setOnToggleBackgroundAudio((enabled) => {
+      backgroundAudioEnabled = enabled;
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (!this.running) return;
+      if (document.hidden && !backgroundAudioEnabled) {
+        this.audioEngine.suspend();
+      } else if (!document.hidden) {
+        this.audioEngine.resume();
+      }
+    });
+
     // Resize
     window.addEventListener('resize', () => this.onResize());
 

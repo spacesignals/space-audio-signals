@@ -125,6 +125,7 @@ interface HUDCallbacks {
   onTopView: () => void;
   onToggleLabels: (visible: boolean) => void;
   onToggleDebug: () => void;
+  onToggleBackgroundAudio: (enabled: boolean) => void;
 }
 
 interface HUDState {
@@ -163,6 +164,7 @@ function BodyList({
   callbacks: HUDCallbacks;
 }) {
   const [labelsOn, setLabelsOn] = useState(true);
+  const [bgAudio, setBgAudio] = useState(true);
 
   return (
     <div class="hud-body-list hud-panel">
@@ -184,6 +186,18 @@ function BodyList({
           }}
         />
         Labels
+      </label>
+      <label class="hud-toggle">
+        <input
+          type="checkbox"
+          checked={bgAudio}
+          onChange={() => {
+            const next = !bgAudio;
+            setBgAudio(next);
+            callbacks.onToggleBackgroundAudio(next);
+          }}
+        />
+        Background Audio
       </label>
       <label class="hud-toggle">
         <input type="checkbox" onChange={callbacks.onToggleDebug} />
@@ -260,6 +274,7 @@ export class HUD {
     onTopView: () => {},
     onToggleLabels: () => {},
     onToggleDebug: () => {},
+    onToggleBackgroundAudio: () => {},
   };
   private mountEl: HTMLDivElement;
   private bodies: CelestialBodyConfig[] = [];
@@ -329,6 +344,10 @@ export class HUD {
 
   setOnToggleDebug(cb: () => void): void {
     this.callbacks.onToggleDebug = cb;
+  }
+
+  setOnToggleBackgroundAudio(cb: (enabled: boolean) => void): void {
+    this.callbacks.onToggleBackgroundAudio = cb;
   }
 
   setVisible(visible: boolean): void {

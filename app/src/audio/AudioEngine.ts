@@ -123,23 +123,21 @@ export class AudioEngine {
     // Update deep space drone: fades up when far from everything
     this.updateDroneGain(distances);
 
-    // Process each body's audio
-    let activeCount = 0;
+    // Process each body's audio with dynamic stem budget.
+    // Distances are sorted nearest-first, so closest bodies get priority.
+    let stemBudget = MAX_CONCURRENT_STEMS;
     for (const { bodyId, distanceKm, config } of distances) {
       const prefetchRadius = config.audibilityRadiusKm * STEM_PREFETCH_MULTIPLIER;
 
       if (distanceKm < prefetchRadius) {
-        // Within prefetch range: ensure stems are loaded
         this.ensureStemsLoaded(config);
       }
 
-      if (distanceKm < config.audibilityRadiusKm && activeCount < MAX_CONCURRENT_STEMS) {
-        // Within audibility range: calculate and apply gain
+      if (distanceKm < config.audibilityRadiusKm && stemBudget > 0) {
         const targetGain = this.calculateGain(distanceKm, config);
         this.setStemGains(bodyId, targetGain);
-        if (targetGain > 0.001) activeCount += config.stems.length;
+        if (targetGain > 0.001) stemBudget -= config.stems.length;
       } else {
-        // Out of range: fade to silence
         this.setStemGains(bodyId, 0);
       }
     }
@@ -367,6 +365,16 @@ export class AudioEngine {
     if (this.masterGain) {
       this.masterGain.gain.value = Math.max(0, Math.min(1, volume));
     }
+  }
+
+  /** Suspend the AudioContext (pause all audio processing). */
+  suspend(): void {
+    this.ctx?.suspend().catch(() => {});
+  }
+
+  /** Resume the AudioContext after a suspend. */
+  resume(): void {
+    this.ctx?.resume().catch(() => {});
   }
 
   dispose(): void {

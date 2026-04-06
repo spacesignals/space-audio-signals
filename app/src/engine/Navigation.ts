@@ -422,6 +422,23 @@ export class Navigation {
     if (this.tourPhase === 'travel') {
       if (!this.travelStart || !this.travelEnd || !this.travelLookTarget) return;
 
+      // Live-track the target body's position during travel (planets move)
+      const wp = this.tourWaypoints[this.tourIndex];
+      const livePos = this.getBodyPosition?.(wp.bodyId);
+      if (livePos) {
+        // Recompute destination: same approach direction, same distance, updated center
+        const fovRad = (this.camera.fov * Math.PI) / 180;
+        const halfTargetAngle = (fovRad / 3) / 2;
+        const distance = wp.visualRadius > 0
+          ? wp.visualRadius / Math.tan(halfTargetAngle)
+          : 0.5;
+        const dir = this.travelStart.clone().sub(livePos);
+        if (dir.lengthSq() < 0.001) dir.set(1, 0.3, 0);
+        dir.normalize();
+        this.travelEnd.copy(livePos).addScaledVector(dir, distance);
+        this.travelLookTarget.copy(livePos);
+      }
+
       const elapsed = performance.now() - this.travelStartTime;
       let t = Math.min(elapsed / this.travelDuration, 1);
       t = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;

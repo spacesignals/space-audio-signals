@@ -33,7 +33,10 @@ export const CAMERA_DRIFT_FREQUENCY = 0.3;
 export const MAX_CONCURRENT_STEMS = 10;
 export const STEM_PREFETCH_MULTIPLIER = 1.5; // start loading at 1.5x audibility radius
 export const DEEP_SPACE_DRONE_MAX_GAIN = 0.3;
-export const CROSSFADE_SPEED = 0.02; // gain change per frame (~2-5 seconds full crossfade at 60fps)
+export const CROSSFADE_TIME_CONSTANT = 0.8; // seconds — exponential approach time constant for setTargetAtTime
+export const DRONE_CROSSFADE_TIME_CONSTANT = 1.5; // seconds — slower crossfade for deep space drone
+export const STEM_RETRY_COOLDOWN_MS = 60_000; // wait 60s before retrying a failed stem
+export const STEM_MAX_RETRIES = 1; // retry once after cooldown, then permanently fail
 
 // Performance budgets
 export const MAX_RENDERED_BODIES = 50; // max bodies with visible meshes

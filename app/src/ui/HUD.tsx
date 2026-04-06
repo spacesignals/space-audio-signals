@@ -84,6 +84,49 @@ const CSS = `
   opacity: 0.6;
   white-space: nowrap;
 }
+.hud-settings {
+  position: absolute;
+  bottom: 60px; left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 16px;
+  min-width: 200px;
+}
+.hud-settings h4 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.hud-settings label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin: 6px 0;
+}
+.hud-settings input[type="range"] {
+  flex: 1;
+  accent-color: #6CA6FF;
+  cursor: pointer;
+}
+.settings-toggle {
+  position: absolute;
+  bottom: 20px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: white;
+  padding: 6px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  backdrop-filter: blur(4px);
+}
+.settings-toggle:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.4);
+}
 .start-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -126,6 +169,8 @@ interface HUDCallbacks {
   onToggleLabels: (visible: boolean) => void;
   onToggleDebug: () => void;
   onToggleBackgroundAudio: (enabled: boolean) => void;
+  onVolumeChange: (volume: number) => void;
+  onBloomStrengthChange: (strength: number) => void;
 }
 
 interface HUDState {
@@ -224,6 +269,45 @@ function BodyInfo({ body }: { body: CelestialBodyConfig | null }) {
   );
 }
 
+function SettingsPanel({ callbacks }: { callbacks: HUDCallbacks }) {
+  const [volume, setVolume] = useState(100);
+  const [bloom, setBloom] = useState(100);
+
+  return (
+    <div class="hud-settings hud-panel">
+      <h4>Settings</h4>
+      <label>
+        Volume
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={volume}
+          onInput={(e) => {
+            const v = Number((e.target as HTMLInputElement).value);
+            setVolume(v);
+            callbacks.onVolumeChange(v / 100);
+          }}
+        />
+      </label>
+      <label>
+        Bloom
+        <input
+          type="range"
+          min="0"
+          max="200"
+          value={bloom}
+          onInput={(e) => {
+            const v = Number((e.target as HTMLInputElement).value);
+            setBloom(v);
+            callbacks.onBloomStrengthChange(v / 100);
+          }}
+        />
+      </label>
+    </div>
+  );
+}
+
 function HUDApp({
   bodies,
   callbacks,
@@ -232,6 +316,7 @@ function HUDApp({
   callbacks: HUDCallbacks;
 }) {
   const [, setTick] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   rerenderHUD = useCallback(() => setTick((t) => t + 1), []);
 
   const s = hudState;
@@ -254,9 +339,10 @@ function HUDApp({
         <div class="hud-speed hud-panel">Speed: {formatSpeed(s.speedUnitsPerSec)}</div>
         <BodyList bodies={bodies} callbacks={callbacks} />
         <BodyInfo body={s.selectedBody} />
-        <div class="controls-hint hud-panel">
-          WASD / Arrows to move | Mouse drag to look | Scroll to change speed | Click planet to fly there
-        </div>
+        {settingsOpen && <SettingsPanel callbacks={callbacks} />}
+        <button class="settings-toggle" onClick={() => setSettingsOpen(!settingsOpen)}>
+          {settingsOpen ? 'Close Settings' : 'Settings'}
+        </button>
       </div>
     </>
   );
@@ -275,6 +361,8 @@ export class HUD {
     onToggleLabels: () => {},
     onToggleDebug: () => {},
     onToggleBackgroundAudio: () => {},
+    onVolumeChange: () => {},
+    onBloomStrengthChange: () => {},
   };
   private mountEl: HTMLDivElement;
   private bodies: CelestialBodyConfig[] = [];
@@ -348,6 +436,14 @@ export class HUD {
 
   setOnToggleBackgroundAudio(cb: (enabled: boolean) => void): void {
     this.callbacks.onToggleBackgroundAudio = cb;
+  }
+
+  setOnVolumeChange(cb: (volume: number) => void): void {
+    this.callbacks.onVolumeChange = cb;
+  }
+
+  setOnBloomStrengthChange(cb: (strength: number) => void): void {
+    this.callbacks.onBloomStrengthChange = cb;
   }
 
   setVisible(visible: boolean): void {

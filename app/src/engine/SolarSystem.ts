@@ -25,6 +25,7 @@ export class SolarSystem {
   private bodyMeshes: Map<string, BodyMesh> = new Map();
   private textureLoader = new THREE.TextureLoader();
   private sunLight: THREE.PointLight;
+  private _labelWorldPos = new THREE.Vector3(); // reusable for updateLabels
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -180,10 +181,9 @@ export class SolarSystem {
     for (const [, body] of this.bodyMeshes) {
       if (!body.label) continue;
 
-      // World position of the label
-      const labelWorldPos = new THREE.Vector3();
-      body.label.getWorldPosition(labelWorldPos);
-      const dist = camera.position.distanceTo(labelWorldPos);
+      // World position of the label (reuse pre-allocated vector)
+      body.label.getWorldPosition(this._labelWorldPos);
+      const dist = camera.position.distanceTo(this._labelWorldPos);
 
       // Size in world units needed to subtend targetScreenFraction of viewport
       const worldSize = 2 * dist * Math.tan(fovRad / 2) * targetScreenFraction;

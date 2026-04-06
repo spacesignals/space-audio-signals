@@ -1,32 +1,36 @@
-import type { CelestialBodyConfig, AudioStem } from '../types';
+import type { CelestialBodyConfig, AudioStem, BodyDistance } from '../types';
 import {
   MAX_CONCURRENT_STEMS,
   STEM_PREFETCH_MULTIPLIER,
   DEEP_SPACE_DRONE_MAX_GAIN,
-  CROSSFADE_SPEED,
-  KM_PER_UNIT,
+  CROSSFADE_TIME_CONSTANT,
+  DRONE_CROSSFADE_TIME_CONSTANT,
+  STEM_RETRY_COOLDOWN_MS,
+  STEM_MAX_RETRIES,
 } from '../data/constants';
 
 /**
  * AudioEngine manages all spatial audio:
  * - Per-body stems with distance-based gain curves
  * - Deep space procedural drone (fades up when far from everything)
- * - Stem lifecycle: prefetch -> decode -> play -> suspend
+ * - Stem lifecycle: prefetch -> decode -> play -> evict
+ *
+ * Gain changes use Web Audio's setTargetAtTime() for frame-rate-independent,
+ * sample-accurate crossfades on the audio thread.
  */
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private stems: Map<string, AudioStem> = new Map();
-  private bodies: CelestialBodyConfig[] = [];
-  private droneOscillators: OscillatorNode[] = [];
+  private droneNodes: AudioNode[] = [];
   private droneGain: GainNode | null = null;
   private audioBasePath = '/audio/';
   private started = false;
   private lastEvictionCheck = 0;
+  private lastDroneTarget = -1;
 
-  constructor(bodies: CelestialBodyConfig[]) {
-    this.bodies = bodies;
-  }
+  constructor() {}
+
 
   /**
    * Must be called from a user gesture (click/tap) due to browser autoplay policy.
@@ -63,7 +67,7 @@ export class AudioEngine {
     osc1.connect(gain1);
     gain1.connect(this.droneGain);
     osc1.start();
-    this.droneOscillators.push(osc1);
+    this.droneNodes.push(osc1);
 
     // Slow LFO modulating the sub
     const lfo = this.ctx.createOscillator();
@@ -74,7 +78,7 @@ export class AudioEngine {
     lfo.connect(lfoGain);
     lfoGain.connect(osc1.frequency);
     lfo.start();
-    this.droneOscillators.push(lfo);
+    this.droneNodes.push(lfo);
 
     // Filtered noise layer for texture
     const bufferSize = this.ctx.sampleRate * 2;
@@ -99,42 +103,22 @@ export class AudioEngine {
     filter.connect(noiseGain);
     noiseGain.connect(this.droneGain);
     noiseSource.start();
+    this.droneNodes.push(noiseSource);
   }
 
   /**
-   * Called every frame. Updates all stem gains based on camera distance.
-   * @param cameraPositionUnits - Camera position in Three.js units
-   * @param bodyPositionsUnits - Map of bodyId -> [x, y, z] in Three.js units
+   * Called every frame. Updates all stem gains based on pre-computed distances.
+   * @param distances - Sorted array of body distances (nearest first), computed by main loop.
    */
-  update(
-    cameraPositionUnits: [number, number, number],
-    bodyPositionsUnits: Map<string, [number, number, number]>
-  ): void {
+  update(distances: BodyDistance[]): void {
     if (!this.ctx || !this.started) return;
 
     // Resume context if suspended (browser autoplay policy)
     if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      this.ctx.resume().catch(() => {
+        // iOS Safari may reject — will retry next frame
+      });
     }
-
-    // Calculate distances to all bodies (in km)
-    const distances: { bodyId: string; distanceKm: number; config: CelestialBodyConfig }[] = [];
-
-    for (const body of this.bodies) {
-      const pos = bodyPositionsUnits.get(body.id);
-      if (!pos) continue;
-
-      const dx = cameraPositionUnits[0] - pos[0];
-      const dy = cameraPositionUnits[1] - pos[1];
-      const dz = cameraPositionUnits[2] - pos[2];
-      const distanceUnits = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      const distanceKm = distanceUnits * KM_PER_UNIT;
-
-      distances.push({ bodyId: body.id, distanceKm, config: body });
-    }
-
-    // Sort by distance (nearest first)
-    distances.sort((a, b) => a.distanceKm - b.distanceKm);
 
     // Update deep space drone: fades up when far from everything
     this.updateDroneGain(distances);
@@ -164,7 +148,7 @@ export class AudioEngine {
     const now = performance.now();
     if (now - this.lastEvictionCheck > 5000) {
       this.lastEvictionCheck = now;
-      this.evictStaleSteams();
+      this.evictStaleStems();
     }
   }
 
@@ -194,25 +178,28 @@ export class AudioEngine {
 
   /**
    * Update the deep space drone gain. Louder when far from all bodies.
+   * Uses setTargetAtTime for frame-rate-independent crossfade.
    */
   private updateDroneGain(
     distances: { distanceKm: number; config: CelestialBodyConfig }[]
   ): void {
-    if (!this.droneGain) return;
+    if (!this.droneGain || !this.ctx) return;
 
     // Drone gain is inverse of proximity to any body
-    // If close to anything, drone fades out. If far from everything, drone comes in.
-    let closestNormalized = 1.0; // 1 = far from everything
+    let closestNormalized = 1.0;
     for (const { distanceKm, config } of distances) {
       const normalized = Math.min(distanceKm / config.audibilityRadiusKm, 1.0);
       closestNormalized = Math.min(closestNormalized, normalized);
     }
 
-    // Smoothly approach target
     const target = closestNormalized * DEEP_SPACE_DRONE_MAX_GAIN;
-    const current = this.droneGain.gain.value;
-    const diff = target - current;
-    this.droneGain.gain.value = current + diff * CROSSFADE_SPEED;
+
+    // Only schedule if target changed meaningfully (avoid redundant scheduling)
+    if (Math.abs(target - this.lastDroneTarget) > 0.001) {
+      this.droneGain.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.droneGain.gain.setTargetAtTime(target, this.ctx.currentTime, DRONE_CROSSFADE_TIME_CONSTANT);
+      this.lastDroneTarget = target;
+    }
   }
 
   /**
@@ -225,10 +212,36 @@ export class AudioEngine {
       ? config.stems
       : []; // Pool-based loading would go here in Phase 2
 
+    const now = performance.now();
+
     for (const url of stemUrls) {
       const stemId = `${config.id}:${url}`;
       const existing = this.stems.get(stemId);
-      if (existing && existing.state !== 'unloaded' && existing.state !== 'evicted' && existing.state !== 'failed') continue;
+
+      if (existing) {
+        // Skip if already loading, ready, or permanently failed
+        if (existing.state === 'loading' || existing.state === 'ready' || existing.state === 'permanently-failed') {
+          continue;
+        }
+        // Skip failed stems until cooldown expires
+        if (existing.state === 'failed') {
+          if (now - existing.failedAt < STEM_RETRY_COOLDOWN_MS) continue;
+          if (existing.retryCount >= STEM_MAX_RETRIES) {
+            existing.state = 'permanently-failed';
+            continue;
+          }
+          // Retry: increment count and re-load
+          existing.retryCount++;
+          existing.state = 'loading';
+          this.loadStem(existing).catch(() => {
+            existing.state = 'failed';
+            existing.failedAt = performance.now();
+            console.warn(`Retry failed for stem: ${existing.url}`);
+          });
+          continue;
+        }
+        // evicted or unloaded: fall through to create new stem
+      }
 
       const stem: AudioStem = {
         id: stemId,
@@ -238,14 +251,16 @@ export class AudioEngine {
         gainNode: null,
         state: 'loading',
         url: this.audioBasePath + url,
-        lastActiveTime: performance.now(),
+        lastActiveTime: now,
+        failedAt: 0,
+        retryCount: 0,
       };
       this.stems.set(stemId, stem);
 
       // Load async, don't block the frame
       this.loadStem(stem).catch(() => {
-        // Error handling: mark failed, skip
         stem.state = 'failed';
+        stem.failedAt = performance.now();
         console.warn(`Failed to load stem: ${stem.url}`);
       });
     }
@@ -281,23 +296,28 @@ export class AudioEngine {
     } catch (err) {
       console.warn(`Stem decode failed for ${stem.url}:`, err);
       stem.state = 'failed';
+      stem.failedAt = performance.now();
     }
   }
 
   /**
-   * Smoothly crossfade all stems for a body to the target gain.
+   * Schedule gain change for all stems of a body using setTargetAtTime.
+   * Runs on the audio thread — frame-rate independent, sample-accurate.
    */
   private setStemGains(bodyId: string, targetGain: number): void {
-    const now = performance.now();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const perfNow = performance.now();
+
     for (const [, stem] of this.stems) {
       if (stem.bodyId !== bodyId || !stem.gainNode) continue;
 
-      const current = stem.gainNode.gain.value;
-      const diff = targetGain - current;
-      stem.gainNode.gain.value = current + diff * CROSSFADE_SPEED;
+      // Only reschedule if target changed meaningfully
+      stem.gainNode.gain.cancelScheduledValues(now);
+      stem.gainNode.gain.setTargetAtTime(targetGain, now, CROSSFADE_TIME_CONSTANT);
 
-      if (stem.gainNode.gain.value > 0.001) {
-        stem.lastActiveTime = now;
+      if (targetGain > 0.001) {
+        stem.lastActiveTime = perfNow;
       }
     }
   }
@@ -306,7 +326,7 @@ export class AudioEngine {
    * Evict stems that have been silent for over 30 seconds.
    * Frees AudioBuffer memory for bodies the camera has moved far from.
    */
-  private evictStaleSteams(): void {
+  private evictStaleStems(): void {
     const now = performance.now();
     const EVICT_AFTER_MS = 30_000;
 
@@ -350,8 +370,11 @@ export class AudioEngine {
   }
 
   dispose(): void {
-    for (const osc of this.droneOscillators) {
-      try { osc.stop(); } catch { /* ignore */ }
+    for (const node of this.droneNodes) {
+      try {
+        if (node instanceof OscillatorNode) node.stop();
+        if (node instanceof AudioBufferSourceNode) node.stop();
+      } catch { /* ignore */ }
     }
     for (const [, stem] of this.stems) {
       try { stem.source?.stop(); } catch { /* ignore */ }
@@ -359,5 +382,6 @@ export class AudioEngine {
     this.ctx?.close();
     this.ctx = null;
     this.stems.clear();
+    this.droneNodes = [];
   }
 }

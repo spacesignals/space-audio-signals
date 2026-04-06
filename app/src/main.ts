@@ -4,10 +4,11 @@ import { Ephemeris } from './engine/Ephemeris';
 import { Navigation } from './engine/Navigation';
 import { PostProcessing } from './engine/PostProcessing';
 import { AudioEngine } from './audio/AudioEngine';
-import { HUD } from './ui/HUD';
+import { HUD } from './ui/HUD.tsx';
 import { PerformanceMonitor } from './engine/PerformanceMonitor';
 import { BODIES } from './data/bodies';
 import { CAMERA_FOV, CAMERA_NEAR, CAMERA_FAR, KM_PER_UNIT } from './data/constants';
+import type { BodyDistance } from './types';
 
 /*
  * GalaxyMusic — Main Application
@@ -75,7 +76,7 @@ class App {
     this.solarSystem = new SolarSystem(this.scene);
     this.navigation = new Navigation(this.camera, this.renderer.domElement);
     this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera);
-    this.audioEngine = new AudioEngine(BODIES);
+    this.audioEngine = new AudioEngine();
     this.hud = new HUD();
     this.perfMonitor = new PerformanceMonitor();
 
@@ -153,19 +154,21 @@ class App {
     // Update camera
     this.navigation.update(deltaTime);
 
+    // Compute distances once, share across audio + HUD
+    const distances = this.computeDistances(positions);
+
     // Update audio (distance-based stem mixing)
     if (this.running) {
-      this.audioEngine.update(
-        this.navigation.getCameraPositionUnits(),
-        positions
-      );
+      this.audioEngine.update(distances);
     }
 
-    // Update HUD
-    this.updateHUD(positions);
+    // Update HUD from pre-computed distances
+    this.updateHUD(distances);
 
-    // Render with post-processing (bloom)
+    // Apply drift offset for visual rendering only
+    this.navigation.applyDrift();
     this.postProcessing.render();
+    this.navigation.removeDrift();
 
     // Update perf monitor
     this.perfMonitor.setResourceCounts({
@@ -177,27 +180,33 @@ class App {
     this.perfMonitor.endFrame();
   };
 
-  private updateHUD(positions: Map<string, [number, number, number]>): void {
+  /** Compute sorted distances from camera to all bodies. Shared by audio + HUD. */
+  private computeDistances(positions: Map<string, [number, number, number]>): BodyDistance[] {
     const camPos = this.navigation.getCameraPositionUnits();
+    const distances: BodyDistance[] = [];
 
-    let nearestId: string | null = null;
-    let nearestDistKm = Infinity;
+    for (const body of BODIES) {
+      const pos = positions.get(body.id);
+      if (!pos) continue;
 
-    for (const [bodyId, pos] of positions) {
       const dx = camPos[0] - pos[0];
       const dy = camPos[1] - pos[1];
       const dz = camPos[2] - pos[2];
-      const distKm = Math.sqrt(dx * dx + dy * dy + dz * dz) * KM_PER_UNIT;
+      const distanceKm = Math.sqrt(dx * dx + dy * dy + dz * dz) * KM_PER_UNIT;
 
-      if (distKm < nearestDistKm) {
-        nearestDistKm = distKm;
-        nearestId = bodyId;
-      }
+      distances.push({ bodyId: body.id, distanceKm, config: body });
     }
 
-    const nearestName = nearestId
-      ? BODIES.find(b => b.id === nearestId)?.name || nearestId
+    distances.sort((a, b) => a.distanceKm - b.distanceKm);
+    return distances;
+  }
+
+  private updateHUD(distances: BodyDistance[]): void {
+    const nearest = distances[0];
+    const nearestName = nearest
+      ? BODIES.find(b => b.id === nearest.bodyId)?.name || nearest.bodyId
       : null;
+    const nearestDistKm = nearest ? nearest.distanceKm : Infinity;
 
     this.hud.updateDistance(nearestName, nearestDistKm);
     this.hud.updateSpeed(this.navigation.getSpeed());

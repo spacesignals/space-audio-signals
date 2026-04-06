@@ -69,7 +69,7 @@ describe('Ephemeris', () => {
   it('getPosition returns undefined for unknown body', () => {
     const eph = new Ephemeris();
     eph.update(100_000);
-    expect(eph.getPosition('pluto')).toBeUndefined();
+    expect(eph.getPosition('alpha-centauri')).toBeUndefined();
   });
 
   it('getPosition returns value for known body', () => {

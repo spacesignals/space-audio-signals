@@ -1,5 +1,6 @@
 import * as Astronomy from 'astronomy-engine';
 import { KM_PER_UNIT } from '../data/constants';
+import { MOON_ORBITS } from '../data/bodies';
 
 // Map our body IDs to astronomy-engine body names
 const BODY_MAP: Record<string, Astronomy.Body> = {
@@ -11,14 +12,24 @@ const BODY_MAP: Record<string, Astronomy.Body> = {
   saturn: Astronomy.Body.Saturn,
   uranus: Astronomy.Body.Uranus,
   neptune: Astronomy.Body.Neptune,
+  pluto: Astronomy.Body.Pluto,
+  moon: Astronomy.Body.Moon,
 };
 
 // AU to km
 const AU_TO_KM = 149_597_870.7;
 
+// Reference epoch for moon orbit phase calculation
+const J2000_MS = Date.UTC(2000, 0, 1, 12, 0, 0);
+const MS_PER_DAY = 86_400_000;
+
 /**
  * Ephemeris computes real-time positions of solar system bodies
  * using the astronomy-engine library (client-side, no server needed).
+ *
+ * Planets + Pluto: real positions via astronomy-engine.
+ * Earth's Moon: real position via astronomy-engine (geocentric, converted to heliocentric).
+ * Other moons: simple circular orbits around their parent planet.
  */
 export class Ephemeris {
   private positions: Map<string, [number, number, number]> = new Map();
@@ -42,8 +53,21 @@ export class Ephemeris {
 
     const date = new Date();
 
+    // Phase 1: compute planets + pluto via astronomy-engine
     for (const [bodyId, astroBody] of Object.entries(BODY_MAP)) {
       try {
+        if (bodyId === 'moon') {
+          // Moon is geocentric in astronomy-engine — add Earth's position
+          const earthPos = this.positions.get('earth');
+          if (!earthPos) continue;
+          const geoVec = Astronomy.GeoVector(Astronomy.Body.Moon, date, true);
+          const x = earthPos[0] + (geoVec.x * AU_TO_KM) / KM_PER_UNIT;
+          const y = earthPos[1] + (geoVec.z * AU_TO_KM) / KM_PER_UNIT;
+          const z = earthPos[2] + (geoVec.y * AU_TO_KM) / KM_PER_UNIT;
+          this.positions.set('moon', [x, y, z]);
+          continue;
+        }
+
         // Get heliocentric ecliptic position in AU
         const vec = Astronomy.HelioVector(astroBody, date);
 
@@ -54,12 +78,39 @@ export class Ephemeris {
 
         this.positions.set(bodyId, [x, y, z]);
       } catch (err) {
-        // Fallback: keep last known position or use zero
         if (!this.positions.has(bodyId)) {
           this.positions.set(bodyId, [0, 0, 0]);
         }
         console.warn(`Ephemeris error for ${bodyId}:`, err);
       }
+    }
+
+    // Phase 2: compute other moons as circular orbits around their parent
+    const daysSinceJ2000 = (date.getTime() - J2000_MS) / MS_PER_DAY;
+
+    for (const [moonId, orbit] of Object.entries(MOON_ORBITS)) {
+      if (moonId === 'moon') continue; // handled above via astronomy-engine
+
+      // Find parent body position
+      const parentMap: Record<string, string> = {
+        io: 'jupiter', europa: 'jupiter', ganymede: 'jupiter', callisto: 'jupiter',
+        titan: 'saturn', enceladus: 'saturn', mimas: 'saturn',
+        titania: 'uranus', oberon: 'uranus',
+        triton: 'neptune',
+      };
+      const parentId = parentMap[moonId];
+      const parentPos = parentId ? this.positions.get(parentId) : undefined;
+      if (!parentPos) continue;
+
+      // Simple circular orbit in the ecliptic plane
+      const angle = (2 * Math.PI * daysSinceJ2000) / orbit.periodDays;
+      const radiusUnits = orbit.semiMajorAxisKm / KM_PER_UNIT;
+
+      const x = parentPos[0] + Math.cos(angle) * radiusUnits;
+      const y = parentPos[1]; // moons orbit in ecliptic plane (simplified)
+      const z = parentPos[2] + Math.sin(angle) * radiusUnits;
+
+      this.positions.set(moonId, [x, y, z]);
     }
 
     return this.positions;

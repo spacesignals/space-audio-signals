@@ -100,8 +100,8 @@ class App {
       this.running = true;
     });
 
-    // Tour: Sun -> all planets in order
-    const tourOrder = ['sun', 'mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'];
+    // Tour: Sun -> planets in order (skip moons/dwarf planets for tour)
+    const tourOrder = ['sun', 'mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'pluto'];
     this.hud.setOnTour(() => {
       const waypoints = tourOrder.map(id => {
         const pos = this.solarSystem.getBodyPosition(id) || new THREE.Vector3();
@@ -127,6 +127,14 @@ class App {
     // Debug toggle
     this.hud.setOnToggleDebug(() => {
       this.perfMonitor.toggle();
+    });
+
+    // Settings: volume + bloom
+    this.hud.setOnVolumeChange((volume) => {
+      this.audioEngine.setMasterVolume(volume);
+    });
+    this.hud.setOnBloomStrengthChange((strength) => {
+      this.postProcessing.setBloomStrength(strength);
     });
 
     // Background audio toggle (default: enabled — audio continues when tab hidden)

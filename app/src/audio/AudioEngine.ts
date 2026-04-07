@@ -37,14 +37,17 @@ export class AudioEngine {
    */
   async init(): Promise<void> {
     if (this.ctx) return;
+    console.log('[AudioEngine] init() called');
 
     this.ctx = new AudioContext();
+    console.log('[AudioEngine] AudioContext state:', this.ctx.state);
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = 1.0;
     this.masterGain.connect(this.ctx.destination);
 
     this.initDeepSpaceDrone();
     this.started = true;
+    console.log('[AudioEngine] Drone initialized, started =', this.started);
   }
 
   /**
@@ -190,7 +193,8 @@ export class AudioEngine {
       closestNormalized = Math.min(closestNormalized, normalized);
     }
 
-    const target = closestNormalized * DEEP_SPACE_DRONE_MAX_GAIN;
+    // Minimum 30% drone so there's always ambient sound (no stems loaded yet)
+    const target = (0.3 + 0.7 * closestNormalized) * DEEP_SPACE_DRONE_MAX_GAIN;
 
     // Only schedule if target changed meaningfully (avoid redundant scheduling)
     if (Math.abs(target - this.lastDroneTarget) > 0.001) {

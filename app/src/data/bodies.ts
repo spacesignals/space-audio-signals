@@ -152,6 +152,7 @@ export const BODIES: CelestialBodyConfig[] = [
     gainCurve: 'logarithmic',
     stems: [],
     pool: 'rocky-moon',
+    textureFile: 'moon.jpg',
     color: '#AAAAAA',
   },
 

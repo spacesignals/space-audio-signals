@@ -49,6 +49,7 @@ export class Navigation {
   private tourTravelDuration = 2000;
   private tourOrbitDurationPerBody = 4500;
   private tourPrevOrbitQuat = new THREE.Quaternion(); // for seamless orbit→travel blend
+  private tourOrbitStartPos = new THREE.Vector3(); // camera pos when orbit begins
   private onTourComplete: (() => void) | null = null;
   private getBodyPosition: ((id: string) => THREE.Vector3 | null) | null = null;
 
@@ -349,9 +350,9 @@ export class Navigation {
     this.tourPhase = 'travel';
     this.mode = 'smooth-journey';
 
-    // Budget: ~75s total across N bodies
+    // Budget: ~120s total across N bodies
     // Travel gets ~25% of time, orbit gets ~75%
-    const totalMs = 75_000;
+    const totalMs = 120_000;
     const travelFraction = 0.25;
     const n = waypoints.length;
     this.tourTravelDuration = (totalMs * travelFraction) / n;
@@ -413,6 +414,10 @@ export class Navigation {
     const dz = this.camera.position.z - this.tourOrbitCenter.z;
     this.tourOrbitAngle = Math.atan2(dz, dx);
 
+    // Capture state at orbit start for smooth blend-in
+    this.tourPrevOrbitQuat.copy(this.camera.quaternion);
+    this.tourOrbitStartPos.copy(this.camera.position);
+
     this.tourOrbitStartTime = performance.now();
     this.tourOrbitDuration = this.tourOrbitDurationPerBody;
     this.tourPhase = 'orbit';
@@ -465,21 +470,38 @@ export class Navigation {
       const elapsed = performance.now() - this.tourOrbitStartTime;
       const t = Math.min(elapsed / this.tourOrbitDuration, 1);
 
-      // Full orbit (2π) with smooth easing at start and end for seamless feel
-      // Ease the angular velocity so it starts smooth and ends smooth
-      const eased = t < 0.1
-        ? 5 * t * t // ease in first 10%
-        : t > 0.9
-          ? 1 - 5 * (1 - t) * (1 - t) + (5 * 0.01) // ease out last 10%
-          : t; // linear middle
+      // Full orbit (2π) with smoothstep easing for seamless start/end
+      const eased = t * t * (3 - 2 * t);
       const angle = this.tourOrbitAngle + eased * Math.PI * 2;
 
       const camX = this.tourOrbitCenter.x + Math.cos(angle) * this.tourOrbitRadius;
       const camZ = this.tourOrbitCenter.z + Math.sin(angle) * this.tourOrbitRadius;
       const camY = this.tourOrbitCenter.y + this.tourOrbitRadius * 0.25;
 
-      this.camera.position.set(camX, camY, camZ);
-      this.camera.lookAt(this.tourOrbitCenter);
+      // Blend position from travel-end into orbit path over first 15%
+      if (t < 0.15) {
+        const blend = t / 0.15;
+        const smoothBlend = blend * blend * (3 - 2 * blend);
+        this.camera.position.set(
+          this.tourOrbitStartPos.x + (camX - this.tourOrbitStartPos.x) * smoothBlend,
+          this.tourOrbitStartPos.y + (camY - this.tourOrbitStartPos.y) * smoothBlend,
+          this.tourOrbitStartPos.z + (camZ - this.tourOrbitStartPos.z) * smoothBlend,
+        );
+      } else {
+        this.camera.position.set(camX, camY, camZ);
+      }
+
+      // Compute target lookAt quaternion
+      const targetQuat = this.computeLookAtQuat(this.camera.position, this.tourOrbitCenter);
+
+      // Blend orientation from travel-end into orbit lookAt over first 15%
+      if (t < 0.15) {
+        const blend = t / 0.15;
+        const smoothBlend = blend * blend * (3 - 2 * blend);
+        this.camera.quaternion.slerpQuaternions(this.tourPrevOrbitQuat, targetQuat, smoothBlend);
+      } else {
+        this.camera.quaternion.copy(targetQuat);
+      }
 
       if (t >= 1) {
         // Save the orbit end orientation for seamless next travel
@@ -506,6 +528,10 @@ export class Navigation {
 
   getSpeed(): number {
     return this.speed;
+  }
+
+  setSpeed(speed: number): void {
+    this.speed = Math.max(FREE_FLIGHT_SPEED_MIN, Math.min(FREE_FLIGHT_SPEED_MAX, speed));
   }
 
   /**

@@ -33,9 +33,9 @@ export class PostProcessing {
     // Pass 2: bloom (only bright pixels above threshold)
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(w, h),
-      0.8,   // strength
-      0.4,   // radius
-      0.85   // threshold — only bright objects (Sun, emissives) bloom
+      0.5,   // strength
+      0.3,   // radius
+      1.2    // threshold — only very bright pixels (Sun core) bloom
     );
     this.composer.addPass(this.bloomPass);
 

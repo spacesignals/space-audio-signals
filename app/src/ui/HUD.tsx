@@ -30,6 +30,21 @@ const CSS = `
   bottom: 20px; right: 20px;
   padding: 8px 16px;
   font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+}
+.hud-speed label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.hud-speed input[type="range"] {
+  flex: 1;
+  accent-color: #6CA6FF;
+  cursor: pointer;
 }
 .hud-body-list {
   position: absolute;
@@ -171,6 +186,7 @@ interface HUDCallbacks {
   onToggleBackgroundAudio: (enabled: boolean) => void;
   onVolumeChange: (volume: number) => void;
   onBloomStrengthChange: (strength: number) => void;
+  onSpeedChange: (speed: number) => void;
 }
 
 interface HUDState {
@@ -208,7 +224,7 @@ function BodyList({
   bodies: CelestialBodyConfig[];
   callbacks: HUDCallbacks;
 }) {
-  const [labelsOn, setLabelsOn] = useState(true);
+  const [labelsOn, setLabelsOn] = useState(false);
   const [bgAudio, setBgAudio] = useState(true);
 
   return (
@@ -336,7 +352,22 @@ function HUDApp({
         <div class="hud-distance hud-panel">
           {s.nearestBody ? `${s.nearestBody} — ${formatDistance(s.distanceKm)}` : 'Deep Space'}
         </div>
-        <div class="hud-speed hud-panel">Speed: {formatSpeed(s.speedUnitsPerSec)}</div>
+        <div class="hud-speed hud-panel">
+          <div>Speed: {formatSpeed(s.speedUnitsPerSec)}</div>
+          <label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={Math.round(Math.log(s.speedUnitsPerSec / 0.01) / Math.log(500 / 0.01) * 100)}
+              onInput={(e) => {
+                const pct = Number((e.target as HTMLInputElement).value) / 100;
+                const speed = 0.01 * Math.pow(500 / 0.01, pct);
+                callbacks.onSpeedChange(speed);
+              }}
+            />
+          </label>
+        </div>
         <BodyList bodies={bodies} callbacks={callbacks} />
         <BodyInfo body={s.selectedBody} />
         {settingsOpen && <SettingsPanel callbacks={callbacks} />}
@@ -363,6 +394,7 @@ export class HUD {
     onToggleBackgroundAudio: () => {},
     onVolumeChange: () => {},
     onBloomStrengthChange: () => {},
+    onSpeedChange: () => {},
   };
   private mountEl: HTMLDivElement;
   private bodies: CelestialBodyConfig[] = [];
@@ -444,6 +476,10 @@ export class HUD {
 
   setOnBloomStrengthChange(cb: (strength: number) => void): void {
     this.callbacks.onBloomStrengthChange = cb;
+  }
+
+  setOnSpeedChange(cb: (speed: number) => void): void {
+    this.callbacks.onSpeedChange = cb;
   }
 
   setVisible(visible: boolean): void {

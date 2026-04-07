@@ -45,7 +45,7 @@ class App {
   private clock = new THREE.Clock();
   private running = false;
 
-  constructor() {
+  private constructor() {
     // Renderer
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -79,10 +79,32 @@ class App {
     this.audioEngine = new AudioEngine();
     this.hud = new HUD();
     this.perfMonitor = new PerformanceMonitor();
+  }
 
-    // Init
-    this.solarSystem.initBodies(BODIES);
-    this.hud.initBodyList(BODIES);
+  static async create(): Promise<App> {
+    const app = new App();
+
+    // Init with progress bar
+    const loaderBar = document.getElementById('loader-bar');
+    const loader = document.getElementById('loader');
+    await app.solarSystem.initBodies(BODIES, (pct) => {
+      if (loaderBar) loaderBar.style.width = `${pct}%`;
+    });
+    if (loaderBar) loaderBar.style.width = '100%';
+    // Brief pause at 100% then fade out
+    await new Promise(r => setTimeout(r, 300));
+    if (loader) {
+      loader.style.transition = 'opacity 0.5s';
+      loader.style.opacity = '0';
+      setTimeout(() => loader.remove(), 500);
+    }
+    app.solarSystem.setLabelsVisible(false);
+    app.hud.initBodyList(BODIES);
+    app.setup();
+    return app;
+  }
+
+  private setup(): void {
 
     // HUD callbacks
     this.hud.setOnBodySelect((bodyId) => {
@@ -135,6 +157,9 @@ class App {
     });
     this.hud.setOnBloomStrengthChange((strength) => {
       this.postProcessing.setBloomStrength(strength);
+    });
+    this.hud.setOnSpeedChange((speed) => {
+      this.navigation.setSpeed(speed);
     });
 
     // Background audio toggle (default: enabled — audio continues when tab hidden)
@@ -244,4 +269,4 @@ class App {
   }
 }
 
-new App();
+App.create();

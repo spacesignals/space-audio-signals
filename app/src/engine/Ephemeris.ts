@@ -1,5 +1,5 @@
 import * as Astronomy from 'astronomy-engine';
-import { KM_PER_UNIT } from '../data/constants';
+import { KM_PER_UNIT, BODY_VISUAL_SCALE } from '../data/constants';
 import { MOON_ORBITS } from '../data/bodies';
 
 // Map our body IDs to astronomy-engine body names
@@ -61,9 +61,9 @@ export class Ephemeris {
           const earthPos = this.positions.get('earth');
           if (!earthPos) continue;
           const geoVec = Astronomy.GeoVector(Astronomy.Body.Moon, date, true);
-          const x = earthPos[0] + (geoVec.x * AU_TO_KM) / KM_PER_UNIT;
-          const y = earthPos[1] + (geoVec.z * AU_TO_KM) / KM_PER_UNIT;
-          const z = earthPos[2] + (geoVec.y * AU_TO_KM) / KM_PER_UNIT;
+          const x = earthPos[0] + (geoVec.x * AU_TO_KM) / KM_PER_UNIT * BODY_VISUAL_SCALE;
+          const y = earthPos[1] + (geoVec.z * AU_TO_KM) / KM_PER_UNIT * BODY_VISUAL_SCALE;
+          const z = earthPos[2] + (geoVec.y * AU_TO_KM) / KM_PER_UNIT * BODY_VISUAL_SCALE;
           this.positions.set('moon', [x, y, z]);
           continue;
         }
@@ -102,9 +102,9 @@ export class Ephemeris {
       const parentPos = parentId ? this.positions.get(parentId) : undefined;
       if (!parentPos) continue;
 
-      // Simple circular orbit in the ecliptic plane
+      // Simple circular orbit — scaled to match visual body scale
       const angle = (2 * Math.PI * daysSinceJ2000) / orbit.periodDays;
-      const radiusUnits = orbit.semiMajorAxisKm / KM_PER_UNIT;
+      const radiusUnits = (orbit.semiMajorAxisKm / KM_PER_UNIT) * BODY_VISUAL_SCALE;
 
       const x = parentPos[0] + Math.cos(angle) * radiusUnits;
       const y = parentPos[1]; // moons orbit in ecliptic plane (simplified)

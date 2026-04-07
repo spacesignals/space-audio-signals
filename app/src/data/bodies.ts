@@ -137,6 +137,7 @@ export const BODIES: CelestialBodyConfig[] = [
     gainCurve: 'logarithmic',
     stems: [],
     pool: 'dwarf-planet',
+    textureFile: 'pluto.jpg',
     color: '#C4B28A',
   },
 

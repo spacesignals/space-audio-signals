@@ -16,7 +16,7 @@ export const RING_VISUAL_SCALE = BODY_VISUAL_SCALE;
 // Camera
 export const CAMERA_NEAR = 0.001;
 export const CAMERA_FAR = 100_000;
-export const CAMERA_FOV = 60;
+export const CAMERA_FOV = 50;
 
 // Navigation defaults
 export const FREE_FLIGHT_SPEED = 37.4; // units/second (~15 AU/min)

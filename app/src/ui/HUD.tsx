@@ -99,6 +99,37 @@ const CSS = `
   opacity: 0.6;
   white-space: nowrap;
 }
+.hud-nav-help {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 20px 28px;
+  font-size: 13px;
+  line-height: 1.7;
+  max-width: 340px;
+  pointer-events: auto;
+}
+.hud-nav-help h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.hud-nav-help table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.hud-nav-help td {
+  padding: 3px 0;
+  vertical-align: top;
+}
+.hud-nav-help td:first-child {
+  color: #6CA6FF;
+  font-weight: 600;
+  padding-right: 16px;
+  white-space: nowrap;
+}
 .hud-settings {
   position: absolute;
   bottom: 60px; left: 50%;
@@ -157,8 +188,9 @@ const CSS = `
   font-size: 42px;
   font-weight: 200;
   margin-bottom: 8px;
-  letter-spacing: 8px;
+  letter-spacing: 6px;
   color: #e0d0a0;
+  text-transform: none;
 }
 .start-overlay p {
   font-size: 16px;
@@ -210,9 +242,31 @@ let rerenderHUD: (() => void) | null = null;
 function StartOverlay({ onStart }: { onStart: () => void }) {
   return (
     <div class="start-overlay" onClick={onStart}>
-      <h1>GALAXYMUSIC</h1>
-      <p>Navigate the solar system. Hear it change.</p>
+      <h1>spacesignals</h1>
+      <p>stemming and stimming through time and space</p>
       <div class="start-btn">Click anywhere to begin</div>
+    </div>
+  );
+}
+
+function NavHelp() {
+  return (
+    <div class="hud-nav-help hud-panel">
+      <h4>Navigation</h4>
+      <table>
+        <tr><td>W / Up</td><td>Fly forward</td></tr>
+        <tr><td>S / Down</td><td>Fly backward</td></tr>
+        <tr><td>A / D</td><td>Strafe left / right</td></tr>
+        <tr><td>Left / Right</td><td>Look left / right</td></tr>
+        <tr><td>Space</td><td>Fly up</td></tr>
+        <tr><td>Shift</td><td>Fly down</td></tr>
+        <tr><td>Mouse drag</td><td>Look around</td></tr>
+        <tr><td>Scroll</td><td>Zoom in/out</td></tr>
+        <tr><td>Speed slider</td><td>Adjust flight speed</td></tr>
+      </table>
+      <div style="margin-top:12px;opacity:0.5;font-size:12px;">
+        Click a body name to fly there automatically.
+      </div>
     </div>
   );
 }
@@ -220,9 +274,13 @@ function StartOverlay({ onStart }: { onStart: () => void }) {
 function BodyList({
   bodies,
   callbacks,
+  navHelp,
+  onToggleNavHelp,
 }: {
   bodies: CelestialBodyConfig[];
   callbacks: HUDCallbacks;
+  navHelp: boolean;
+  onToggleNavHelp: () => void;
 }) {
   const [labelsOn, setLabelsOn] = useState(false);
   const [bgAudio, setBgAudio] = useState(true);
@@ -247,6 +305,14 @@ function BodyList({
           }}
         />
         Labels
+      </label>
+      <label class="hud-toggle">
+        <input
+          type="checkbox"
+          checked={navHelp}
+          onChange={onToggleNavHelp}
+        />
+        Controls
       </label>
       <label class="hud-toggle">
         <input
@@ -333,6 +399,7 @@ function HUDApp({
 }) {
   const [, setTick] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [navHelp, setNavHelp] = useState(false);
   rerenderHUD = useCallback(() => setTick((t) => t + 1), []);
 
   const s = hudState;
@@ -368,8 +435,9 @@ function HUDApp({
             />
           </label>
         </div>
-        <BodyList bodies={bodies} callbacks={callbacks} />
+        <BodyList bodies={bodies} callbacks={callbacks} navHelp={navHelp} onToggleNavHelp={() => setNavHelp(!navHelp)} />
         <BodyInfo body={s.selectedBody} />
+        {navHelp && <NavHelp />}
         {settingsOpen && <SettingsPanel callbacks={callbacks} />}
         <button class="settings-toggle" onClick={() => setSettingsOpen(!settingsOpen)}>
           {settingsOpen ? 'Close Settings' : 'Settings'}

@@ -1,6 +1,6 @@
 import * as Astronomy from 'astronomy-engine';
 import { KM_PER_UNIT, BODY_VISUAL_SCALE } from '../data/constants';
-import { MOON_ORBITS } from '../data/bodies';
+import { MOON_ORBITS, ASTEROID_ORBITS, BODIES } from '../data/bodies';
 
 // Map our body IDs to astronomy-engine body names
 const BODY_MAP: Record<string, Astronomy.Body> = {
@@ -88,16 +88,15 @@ export class Ephemeris {
     // Phase 2: compute other moons as circular orbits around their parent
     const daysSinceJ2000 = (date.getTime() - J2000_MS) / MS_PER_DAY;
 
+    // Build parent map from BODIES config
+    const parentMap: Record<string, string> = {};
+    for (const body of BODIES) {
+      if (body.parentId) parentMap[body.id] = body.parentId;
+    }
+
     for (const [moonId, orbit] of Object.entries(MOON_ORBITS)) {
       if (moonId === 'moon') continue; // handled above via astronomy-engine
 
-      // Find parent body position
-      const parentMap: Record<string, string> = {
-        io: 'jupiter', europa: 'jupiter', ganymede: 'jupiter', callisto: 'jupiter',
-        titan: 'saturn', enceladus: 'saturn', mimas: 'saturn',
-        titania: 'uranus', oberon: 'uranus',
-        triton: 'neptune',
-      };
       const parentId = parentMap[moonId];
       const parentPos = parentId ? this.positions.get(parentId) : undefined;
       if (!parentPos) continue;
@@ -111,6 +110,19 @@ export class Ephemeris {
       const z = parentPos[2] + Math.sin(angle) * radiusUnits;
 
       this.positions.set(moonId, [x, y, z]);
+    }
+
+    // Phase 3: asteroids and dwarf planets on simple solar orbits
+    for (const [id, orbit] of Object.entries(ASTEROID_ORBITS)) {
+      const angle = (2 * Math.PI * daysSinceJ2000) / orbit.periodDays;
+      const radiusUnits = (orbit.semiMajorAxisAU * AU_TO_KM) / KM_PER_UNIT;
+      const incRad = (orbit.inclination * Math.PI) / 180;
+
+      const x = Math.cos(angle) * radiusUnits;
+      const y = Math.sin(incRad) * Math.sin(angle) * radiusUnits;
+      const z = Math.sin(angle) * radiusUnits * Math.cos(incRad);
+
+      this.positions.set(id, [x, y, z]);
     }
 
     return this.positions;

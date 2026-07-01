@@ -44,6 +44,8 @@ class App {
 
   private clock = new THREE.Clock();
   private running = false;
+  private _audioFwd = new THREE.Vector3();
+  private _audioUp = new THREE.Vector3();
 
   private constructor() {
     // Renderer
@@ -82,13 +84,25 @@ class App {
   }
 
   static async create(): Promise<App> {
+    const loader = document.getElementById('loader');
+    const loaderBar = document.getElementById('loader-bar');
+    const setProgress = (pct: number) => {
+      if (loaderBar) loaderBar.style.width = `${pct}%`;
+    };
+
+    // Early progress: renderer + scene setup
+    setProgress(5);
+    await new Promise(r => setTimeout(r, 0));
+
     const app = new App();
 
-    // Init with progress bar
-    const loaderBar = document.getElementById('loader-bar');
-    const loader = document.getElementById('loader');
+    // Scene + systems initialized
+    setProgress(15);
+    await new Promise(r => setTimeout(r, 0));
+
+    // Init bodies with progress mapped to 15-100%
     await app.solarSystem.initBodies(BODIES, (pct) => {
-      if (loaderBar) loaderBar.style.width = `${pct}%`;
+      setProgress(15 + pct * 0.85);
     });
     if (loaderBar) loaderBar.style.width = '100%';
     // Brief pause at 100% then fade out
@@ -204,8 +218,20 @@ class App {
     // Compute distances once, share across audio + HUD
     const distances = this.computeDistances(positions);
 
-    // Update audio (distance-based stem mixing)
+    // Update audio (distance-based stem mixing + spatial positioning)
     if (this.running) {
+      // Update listener position/orientation from camera
+      const camPos = this.camera.position;
+      this._audioFwd.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+      this._audioUp.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
+      const fwd = this._audioFwd;
+      const up = this._audioUp;
+      this.audioEngine.updateListener(
+        [camPos.x, camPos.y, camPos.z],
+        [fwd.x, fwd.y, fwd.z],
+        [up.x, up.y, up.z]
+      );
+      this.audioEngine.setBodyPositions(positions);
       this.audioEngine.update(distances);
     }
 

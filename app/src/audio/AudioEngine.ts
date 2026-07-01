@@ -24,10 +24,16 @@ export class AudioEngine {
   private stems: Map<string, AudioStem> = new Map();
   private droneNodes: AudioNode[] = [];
   private droneGain: GainNode | null = null;
-  private audioBasePath = '/audio/';
+  private audioBasePath = `${import.meta.env.BASE_URL}audio/`;
   private started = false;
   private lastEvictionCheck = 0;
   private lastDroneTarget = -1;
+
+  // Body positions for spatial audio (updated each frame)
+  private bodyPositions: Map<string, [number, number, number]> = new Map();
+
+  // Last gain target per stem — skip rescheduling when target hasn't changed meaningfully
+  private scheduledGains: Map<string, number> = new Map();
 
   constructor() {}
 
@@ -39,8 +45,21 @@ export class AudioEngine {
     if (this.ctx) return;
     console.log('[AudioEngine] init() called');
 
-    this.ctx = new AudioContext();
+    // iOS: route audio through the "media" category so the hardware mute
+    // switch does NOT silence playback. Playing a silent <audio> element
+    // synchronously inside the user gesture promotes the page off the
+    // ringer/notification category. Without this, iPhones with mute on
+    // produce no sound even though the AudioContext is running.
+    this.unlockIOSAudioCategory();
+
+    this.ctx = new AudioContext({ latencyHint: 'playback' });
     console.log('[AudioEngine] AudioContext state:', this.ctx.state);
+
+    // iOS: AudioContext starts in 'suspended' state. resume() MUST be called
+    // synchronously inside the gesture stack — a deferred resume from the
+    // animation loop is rejected by Safari's autoplay policy.
+    this.ctx.resume().catch(() => {});
+
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = 1.0;
     this.masterGain.connect(this.ctx.destination);
@@ -48,6 +67,30 @@ export class AudioEngine {
     this.initDeepSpaceDrone();
     this.started = true;
     console.log('[AudioEngine] Drone initialized, started =', this.started);
+  }
+
+  /**
+   * iOS-only audio category unlock. Plays a tiny inline silent WAV via an
+   * <audio playsinline> element. Safari interprets this as media playback
+   * (not a notification ping), which routes Web Audio through the media
+   * channel — bypassing the hardware silent switch.
+   */
+  private unlockIOSAudioCategory(): void {
+    try {
+      // 44-byte WAV header + zero samples = silent, valid, ~100 bytes base64
+      const silentWav =
+        'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+      const el = document.createElement('audio');
+      el.src = silentWav;
+      el.setAttribute('playsinline', '');
+      el.setAttribute('webkit-playsinline', '');
+      el.loop = false;
+      el.volume = 0;
+      const p = el.play();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch {
+      // ignore — non-iOS browsers don't need this
+    }
   }
 
   /**
@@ -110,7 +153,48 @@ export class AudioEngine {
   }
 
   /**
-   * Called every frame. Updates all stem gains based on pre-computed distances.
+   * Update listener position and orientation for spatial audio.
+   * Call each frame with camera state in Three.js units.
+   */
+  updateListener(
+    position: [number, number, number],
+    forward: [number, number, number],
+    up: [number, number, number]
+  ): void {
+    if (!this.ctx) return;
+    const listener = this.ctx.listener;
+
+    if (listener.positionX) {
+      // Modern API (Chrome, Firefox)
+      // Use setTargetAtTime (τ=0.05s) instead of .value= to smooth rapid camera
+      // movement and mouse-look orientation changes, preventing spatial audio pops.
+      const t = this.ctx.currentTime;
+      const τ = 0.05;
+      listener.positionX.setTargetAtTime(position[0], t, τ);
+      listener.positionY.setTargetAtTime(position[1], t, τ);
+      listener.positionZ.setTargetAtTime(position[2], t, τ);
+      listener.forwardX.setTargetAtTime(forward[0], t, τ);
+      listener.forwardY.setTargetAtTime(forward[1], t, τ);
+      listener.forwardZ.setTargetAtTime(forward[2], t, τ);
+      listener.upX.setTargetAtTime(up[0], t, τ);
+      listener.upY.setTargetAtTime(up[1], t, τ);
+      listener.upZ.setTargetAtTime(up[2], t, τ);
+    } else {
+      // Legacy API (Safari)
+      listener.setPosition(position[0], position[1], position[2]);
+      listener.setOrientation(forward[0], forward[1], forward[2], up[0], up[1], up[2]);
+    }
+  }
+
+  /**
+   * Set body positions for spatial panner updates.
+   */
+  setBodyPositions(positions: Map<string, [number, number, number]>): void {
+    this.bodyPositions = positions;
+  }
+
+  /**
+   * Called every frame. Updates all stem gains and spatial positions based on pre-computed distances.
    * @param distances - Sorted array of body distances (nearest first), computed by main loop.
    */
   update(distances: BodyDistance[]): void {
@@ -122,6 +206,9 @@ export class AudioEngine {
         // iOS Safari may reject — will retry next frame
       });
     }
+
+    // Update panner positions for all active stems
+    this.updatePannerPositions();
 
     // Update deep space drone: fades up when far from everything
     this.updateDroneGain(distances);
@@ -251,6 +338,7 @@ export class AudioEngine {
         buffer: null,
         source: null,
         gainNode: null,
+        pannerNode: null,
         state: 'loading',
         url: this.audioBasePath + url,
         lastActiveTime: now,
@@ -281,16 +369,29 @@ export class AudioEngine {
       const arrayBuffer = await response.arrayBuffer();
       stem.buffer = await this.ctx.decodeAudioData(arrayBuffer);
 
+      // Create panner for spatial audio
+      stem.pannerNode = this.ctx.createPanner();
+      stem.pannerNode.panningModel = 'equalpower';
+      stem.pannerNode.distanceModel = 'linear';
+      stem.pannerNode.maxDistance = 10000;
+      stem.pannerNode.refDistance = 1;
+      stem.pannerNode.rolloffFactor = 0; // we handle gain ourselves, panner only does directionality
+      stem.pannerNode.coneInnerAngle = 360;
+      stem.pannerNode.coneOuterAngle = 360;
+
       // Create gain node
       stem.gainNode = this.ctx.createGain();
       stem.gainNode.gain.value = 0;
+
+      // Chain: source -> panner -> gain -> master
+      stem.pannerNode.connect(stem.gainNode);
       stem.gainNode.connect(this.masterGain);
 
       // Create and start looping source
       const source = this.ctx.createBufferSource();
       source.buffer = stem.buffer;
       source.loop = true;
-      source.connect(stem.gainNode);
+      source.connect(stem.pannerNode);
       source.start();
       stem.source = source;
 
@@ -311,16 +412,19 @@ export class AudioEngine {
     const now = this.ctx.currentTime;
     const perfNow = performance.now();
 
-    for (const [, stem] of this.stems) {
+    for (const [stemId, stem] of this.stems) {
       if (stem.bodyId !== bodyId || !stem.gainNode) continue;
 
-      // Only reschedule if target changed meaningfully
+      if (targetGain > 0.001) stem.lastActiveTime = perfNow;
+
+      // Skip rescheduling if target hasn't changed — avoids micro-discontinuities
+      // from cancelScheduledValues interrupting in-flight exponential curves every frame
+      const prev = this.scheduledGains.get(stemId) ?? -1;
+      if (Math.abs(prev - targetGain) < 0.004) continue;
+
+      this.scheduledGains.set(stemId, targetGain);
       stem.gainNode.gain.cancelScheduledValues(now);
       stem.gainNode.gain.setTargetAtTime(targetGain, now, CROSSFADE_TIME_CONSTANT);
-
-      if (targetGain > 0.001) {
-        stem.lastActiveTime = perfNow;
-      }
     }
   }
 
@@ -340,12 +444,33 @@ export class AudioEngine {
       // Evict: stop source, disconnect, free buffer
       try { stem.source?.stop(); } catch { /* ignore */ }
       stem.source?.disconnect();
+      stem.pannerNode?.disconnect();
       stem.gainNode?.disconnect();
       stem.source = null;
+      stem.pannerNode = null;
       stem.gainNode = null;
       stem.buffer = null;
       stem.state = 'evicted';
       this.stems.delete(id);
+    }
+  }
+
+  /**
+   * Update panner node positions for all active stems based on body positions.
+   */
+  private updatePannerPositions(): void {
+    for (const [, stem] of this.stems) {
+      if (!stem.pannerNode || stem.state !== 'ready') continue;
+      const pos = this.bodyPositions.get(stem.bodyId);
+      if (!pos) continue;
+
+      if (stem.pannerNode.positionX) {
+        stem.pannerNode.positionX.value = pos[0];
+        stem.pannerNode.positionY.value = pos[1];
+        stem.pannerNode.positionZ.value = pos[2];
+      } else {
+        stem.pannerNode.setPosition(pos[0], pos[1], pos[2]);
+      }
     }
   }
 

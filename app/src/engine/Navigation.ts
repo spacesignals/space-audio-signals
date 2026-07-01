@@ -49,11 +49,11 @@ export class Navigation {
   private departureP1 = new THREE.Vector3();
   private departureP2 = new THREE.Vector3();
   private departureP3 = new THREE.Vector3();
-  private departurePassedPlanet = false;                // true once past close-approach point
-  private departurePassedQuat = new THREE.Quaternion(); // snapshot of look-at-planet at close approach
-  private departurePassedElapsed = 0;                   // elapsed ms when close approach fired
   private departureStartTime = 0;
-  private departureDuration = 4500;
+  private departureDuration = 18000;
+  private tourDepartureDuration = 4500;
+  private _tangentLookTarget = new THREE.Vector3();
+  private _tangentQuat = new THREE.Quaternion();
   private pendingTarget: THREE.Vector3 | null = null;
   private pendingTargetRadius = 0;
   private orbitStartAngle = 0;
@@ -83,10 +83,6 @@ export class Navigation {
   private tourDepartureP1 = new THREE.Vector3();
   private tourDepartureP2 = new THREE.Vector3();
   private tourDepartureP3 = new THREE.Vector3();
-  private tourDepartureFlyFwdQuat = new THREE.Quaternion(); // look toward next destination (last-waypoint case)
-  private tourDeparturePassedPlanet = false;
-  private tourDeparturePassedQuat = new THREE.Quaternion();
-  private tourDeparturePassedElapsed = 0;
   private tourDepartureStartTime = 0;
   private tourOrbitAngle = 0;
   private tourOrbitCenter: THREE.Vector3 | null = null;
@@ -331,7 +327,6 @@ export class Navigation {
     this.mode = 'departure-flyby';
     this.departureBody = this.orbitTarget.clone();
     this.departureStartTime = performance.now();
-    this.departurePassedPlanet = false;
     this.pendingTarget = pendingTarget.clone();
     this.pendingTargetRadius = pendingRadius;
 
@@ -352,8 +347,10 @@ export class Navigation {
   }
 
   /**
-   * Cubic Bezier evaluation: planet swells (~5x apparent size at close pass),
-   * camera tracks it, then pans to the destination once past.
+   * Cubic Bezier evaluation: planet swells (~5x apparent size at close pass).
+   * Camera looks along Bezier tangent (instantaneous travel direction) — the planet
+   * sweeps past in the side view rather than being tracked. After close pass, slerps
+   * toward look-at-destination so the orientation settles onto the travel trajectory.
    */
   private updateDepartureFlyby(): void {
     if (!this.departureBody || !this.pendingTarget) return;
@@ -373,29 +370,33 @@ export class Navigation {
       b0 * this.departureP0.z + b1 * this.departureP1.z + b2 * this.departureP2.z + b3 * this.departureP3.z
     );
 
-    // Phase 1 (t < 0.6, ≈ 2.7s): camera tracks planet — it approaches, swells, sweeps past.
-    // Phase 2 (t >= 0.6): slerp from look-at-planet snapshot to look-at-destination over 1.5s.
-    if (!this.departurePassedPlanet && t >= 0.6) {
-      this.departurePassedPlanet = true;
-      this.departurePassedQuat.copy(this.computeLookAtQuat(this.camera.position, this.departureBody));
-      this.departurePassedElapsed = elapsed;
-    }
+    // Camera looks along Bezier tangent: B'(t) = 3[(1-t)²·v01 + 2(1-t)t·v12 + t²·v23]
+    const c0 = om * om;
+    const c1 = 2 * om * t;
+    const c2 = t * t;
+    const tx = c0 * (this.departureP1.x - this.departureP0.x) + c1 * (this.departureP2.x - this.departureP1.x) + c2 * (this.departureP3.x - this.departureP2.x);
+    const ty = c0 * (this.departureP1.y - this.departureP0.y) + c1 * (this.departureP2.y - this.departureP1.y) + c2 * (this.departureP3.y - this.departureP2.y);
+    const tz = c0 * (this.departureP1.z - this.departureP0.z) + c1 * (this.departureP2.z - this.departureP1.z) + c2 * (this.departureP3.z - this.departureP2.z);
+    this._tangentLookTarget.set(this.camera.position.x + tx, this.camera.position.y + ty, this.camera.position.z + tz);
+    this._tangentQuat.copy(this.computeLookAtQuat(this.camera.position, this._tangentLookTarget));
 
-    if (!this.departurePassedPlanet) {
-      this.camera.quaternion.copy(this.computeLookAtQuat(this.camera.position, this.departureBody));
+    // After close pass (t > 0.5), slowly settle onto look-at-destination.
+    if (t < 0.5) {
+      this.camera.quaternion.copy(this._tangentQuat);
     } else {
-      const postFraction = Math.min(1, (elapsed - this.departurePassedElapsed) / 1500);
-      const sb = postFraction * postFraction * (3 - 2 * postFraction);
-      const targetQuat = this.computeLookAtQuat(this.camera.position, this.pendingTarget);
-      this.camera.quaternion.slerpQuaternions(this.departurePassedQuat, targetQuat, sb);
+      const settleT = (t - 0.5) / 0.5;
+      const sb = settleT * settleT * (3 - 2 * settleT);
+      const destQuat = this.computeLookAtQuat(this.camera.position, this.pendingTarget);
+      this.camera.quaternion.slerpQuaternions(this._tangentQuat, destQuat, sb);
     }
 
-    if (t >= 1) {
-      const target = this.pendingTarget;
+    // Cut at t=0.65 — planet has left view, start travel toward destination
+    if (t >= 0.65) {
+      const target = this.pendingTarget!;
       const radius = this.pendingTargetRadius;
       this.pendingTarget = null;
       this.departureBody = null;
-      this.flyTo(target, radius);
+      this.beginFocusTravel(target, radius);
     }
   }
 
@@ -458,6 +459,13 @@ export class Navigation {
    * Body subtends ~1/3 of viewport height at the destination.
    */
   flyTo(target: THREE.Vector3, bodyVisualRadius?: number, duration?: number): void {
+    // Mid-flyby: redirect destination without interrupting the arc
+    if (this.mode === 'departure-flyby') {
+      this.pendingTarget = target.clone();
+      this.pendingTargetRadius = bodyVisualRadius ?? 0;
+      return;
+    }
+
     // If currently orbiting a different body, do a slow departure flyby first
     if (
       (this.mode === 'orbit-idle' || this.mode === 'orbit-settle') &&
@@ -468,6 +476,10 @@ export class Navigation {
       return;
     }
 
+    this.beginFocusTravel(target, bodyVisualRadius, duration);
+  }
+
+  private beginFocusTravel(target: THREE.Vector3, bodyVisualRadius?: number, duration?: number): void {
     this.mode = 'focus-travel';
     this.travelStart = this.camera.position.clone();
     this.travelStartQuat.copy(this.camera.quaternion);
@@ -498,7 +510,6 @@ export class Navigation {
 
     // Set up orbit-after-arrival
     this.orbitTarget = target.clone();
-
     this.orbitRadius = distance;
     this.orbitSettlePos = dest.clone();
     // Randomize orbit shape for variety
@@ -749,23 +760,18 @@ export class Navigation {
     const currentBodyPos = (this.getBodyPosition?.(wp.bodyId) || wp.position).clone();
 
     this.tourDepartureStartTime = performance.now();
-    this.tourDeparturePassedPlanet = false;
 
     const r = this.tourOrbitRadius;
 
     if (!nextWp) {
-      // Last waypoint: fly radially out, no close-pass needed.
+      // Last waypoint: fly radially out, straight line via collinear control points.
       const radialOut = new THREE.Vector3()
         .subVectors(this.camera.position, currentBodyPos)
         .normalize();
-      // Degenerate cubic: P0 = start, P1=P2=start+3r, P3 = start+15r (all collinear → straight line)
       this.tourDepartureP0.copy(this.camera.position);
       this.tourDepartureP1.copy(this.camera.position).addScaledVector(radialOut, r * 5);
       this.tourDepartureP2.copy(this.camera.position).addScaledVector(radialOut, r * 10);
       this.tourDepartureP3.copy(this.camera.position).addScaledVector(radialOut, r * 15);
-      this.tourDepartureFlyFwdQuat.copy(
-        this.computeLookAtQuat(this.tourDepartureP0, this.tourDepartureP3)
-      );
       this.tourPhase = 'departure';
       return;
     }
@@ -826,7 +832,7 @@ export class Navigation {
       }
     } else if (this.tourPhase === 'departure') {
       const elapsed = performance.now() - this.tourDepartureStartTime;
-      const t = Math.min(elapsed / this.departureDuration, 1);
+      const t = Math.min(elapsed / this.tourDepartureDuration, 1);
 
       // Cubic Bezier — same form as click-flyby
       const om = 1 - t;
@@ -840,28 +846,26 @@ export class Navigation {
         b0 * this.tourDepartureP0.z + b1 * this.tourDepartureP1.z + b2 * this.tourDepartureP2.z + b3 * this.tourDepartureP3.z
       );
 
-      const wp = this.tourWaypoints[this.tourIndex];
       const nextWp = this.tourWaypoints[this.tourIndex + 1];
-      const tourBodyPos = this.getBodyPosition?.(wp.bodyId) || wp.position;
 
-      // Track planet until t=0.6, then slerp toward next-waypoint look (or fixed forward for last waypoint)
-      if (!this.tourDeparturePassedPlanet && t >= 0.6) {
-        this.tourDeparturePassedPlanet = true;
-        this.tourDeparturePassedQuat.copy(this.computeLookAtQuat(this.camera.position, tourBodyPos));
-        this.tourDeparturePassedElapsed = elapsed;
-      }
-      if (!this.tourDeparturePassedPlanet) {
-        this.camera.quaternion.copy(this.computeLookAtQuat(this.camera.position, tourBodyPos));
+      // Camera looks along Bezier tangent (forward through arc)
+      const c0 = om * om;
+      const c1 = 2 * om * t;
+      const c2 = t * t;
+      const tx = c0 * (this.tourDepartureP1.x - this.tourDepartureP0.x) + c1 * (this.tourDepartureP2.x - this.tourDepartureP1.x) + c2 * (this.tourDepartureP3.x - this.tourDepartureP2.x);
+      const ty = c0 * (this.tourDepartureP1.y - this.tourDepartureP0.y) + c1 * (this.tourDepartureP2.y - this.tourDepartureP1.y) + c2 * (this.tourDepartureP3.y - this.tourDepartureP2.y);
+      const tz = c0 * (this.tourDepartureP1.z - this.tourDepartureP0.z) + c1 * (this.tourDepartureP2.z - this.tourDepartureP1.z) + c2 * (this.tourDepartureP3.z - this.tourDepartureP2.z);
+      this._tangentLookTarget.set(this.camera.position.x + tx, this.camera.position.y + ty, this.camera.position.z + tz);
+      this._tangentQuat.copy(this.computeLookAtQuat(this.camera.position, this._tangentLookTarget));
+
+      if (t < 0.5 || !nextWp) {
+        this.camera.quaternion.copy(this._tangentQuat);
       } else {
-        const tourPostFraction = Math.min(1, (elapsed - this.tourDeparturePassedElapsed) / 1500);
-        const sb = tourPostFraction * tourPostFraction * (3 - 2 * tourPostFraction);
-        if (nextWp) {
-          const nextPos = this.getBodyPosition?.(nextWp.bodyId) || nextWp.position;
-          const targetQuat = this.computeLookAtQuat(this.camera.position, nextPos);
-          this.camera.quaternion.slerpQuaternions(this.tourDeparturePassedQuat, targetQuat, sb);
-        } else {
-          this.camera.quaternion.slerpQuaternions(this.tourDeparturePassedQuat, this.tourDepartureFlyFwdQuat, sb);
-        }
+        const settleT = (t - 0.5) / 0.5;
+        const sb = settleT * settleT * (3 - 2 * settleT);
+        const nextPos = this.getBodyPosition?.(nextWp.bodyId) || nextWp.position;
+        const destQuat = this.computeLookAtQuat(this.camera.position, nextPos);
+        this.camera.quaternion.slerpQuaternions(this._tangentQuat, destQuat, sb);
       }
 
       if (t >= 1) {

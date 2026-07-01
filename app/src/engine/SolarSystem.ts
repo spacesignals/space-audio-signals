@@ -57,45 +57,51 @@ export class SolarSystem {
       const scale = config.type === 'star' ? SUN_VISUAL_SCALE : BODY_VISUAL_SCALE;
       const radiusUnits = (config.radiusKm / KM_PER_UNIT) * scale;
 
-      // Sphere geometry
-      const geometry = new THREE.SphereGeometry(radiusUnits, 64, 32);
+      // Adaptive tessellation: fewer segments for small bodies
+      const segments = config.type === 'star' ? 64
+        : config.type === 'planet' ? 48
+        : 32; // moons, dwarf planets, asteroids
+      const geometry = new THREE.SphereGeometry(radiusUnits, segments, segments / 2);
+
+      // Only generate procedural texture if no real texture file exists
+      const hasRealTexture = !!config.textureFile;
+      const proceduralTex = hasRealTexture ? null : getProceduralTexture(config.id);
 
       // Material
       let material: THREE.Material;
-      const proceduralTex = getProceduralTexture(config.id);
 
       if (config.emissive) {
         // Sun: emissive, unlit
         material = new THREE.MeshBasicMaterial({
           color: new THREE.Color(config.color || '#FDB813'),
-          map: proceduralTex || undefined,
+          ...(proceduralTex ? { map: proceduralTex } : {}),
         });
         if (config.textureFile) {
-          this.textureLoader.load(`/textures/${config.textureFile}`, (texture) => {
+          this.textureLoader.load(`${import.meta.env.BASE_URL}textures/${config.textureFile}`, (texture) => {
             (material as THREE.MeshBasicMaterial).map = texture;
             (material as THREE.MeshBasicMaterial).color.set(0xffffff);
             (material as THREE.MeshBasicMaterial).needsUpdate = true;
           });
         }
       } else if (config.id === 'earth') {
-        // Earth: custom day/night shader blending based on sun direction
-        material = this.createEarthMaterial(proceduralTex);
+        // Earth: custom day/night shader (always loads real textures)
+        material = this.createEarthMaterial(null);
       } else {
         // Planets/moons: emissive tint so they're visible far from the Sun
         const color = new THREE.Color(config.color || '#888888');
         material = new THREE.MeshStandardMaterial({
           color: proceduralTex ? 0xffffff : color,
-          map: proceduralTex || undefined,
+          ...(proceduralTex ? { map: proceduralTex } : {}),
           roughness: 0.9,
           metalness: 0.0,
           emissive: color,
           emissiveIntensity: proceduralTex ? 0.08 : 0.15,
         });
 
-        // Try loading file texture — overrides procedural if available
+        // Load file texture (primary path for most bodies now)
         if (config.textureFile) {
           this.textureLoader.load(
-            `/textures/${config.textureFile}`,
+            `${import.meta.env.BASE_URL}textures/${config.textureFile}`,
             (texture) => {
               const mat = material as THREE.MeshStandardMaterial;
               mat.map = texture;
@@ -104,7 +110,17 @@ export class SolarSystem {
               mat.needsUpdate = true;
             },
             undefined,
-            () => {}
+            // On failure: fall back to procedural generation
+            () => {
+              const fallback = getProceduralTexture(config.id);
+              if (fallback) {
+                const mat = material as THREE.MeshStandardMaterial;
+                mat.map = fallback;
+                mat.color.set(0xffffff);
+                mat.emissiveIntensity = 0.08;
+                mat.needsUpdate = true;
+              }
+            }
           );
         }
       }
@@ -118,17 +134,37 @@ export class SolarSystem {
       // Atmosphere glow disabled — bloom handles the glow effect
       bodyMesh.atmosphere = undefined;
 
-      // Rings (Saturn, Uranus)
+      // Rings (Saturn, Uranus, Neptune)
       if (config.hasRings && config.ringInnerRadiusKm && config.ringOuterRadiusKm) {
         const innerR = (config.ringInnerRadiusKm / KM_PER_UNIT) * RING_VISUAL_SCALE;
         const outerR = (config.ringOuterRadiusKm / KM_PER_UNIT) * RING_VISUAL_SCALE;
-        const ringGeom = new THREE.RingGeometry(innerR, outerR, 64);
+        const ringGeom = new THREE.RingGeometry(innerR, outerR, 128);
+        // Remap UVs: texture maps radially (inner→outer), not around the ring
+        const uvs = ringGeom.attributes.uv;
+        const pos = ringGeom.attributes.position;
+        for (let i = 0; i < uvs.count; i++) {
+          const x = pos.getX(i);
+          const z = pos.getY(i); // RingGeometry is in XY plane
+          const dist = Math.sqrt(x * x + z * z);
+          const t = (dist - innerR) / (outerR - innerR);
+          uvs.setXY(i, t, 0.5);
+        }
+        // Neptune: very faint dusty rings. Others: golden default.
+        const isNeptune = config.id === 'neptune';
         const ringMat = new THREE.MeshBasicMaterial({
-          color: 0xc8b070,
+          color: isNeptune ? 0x8888aa : 0xc8b070,
           side: THREE.DoubleSide,
           transparent: true,
-          opacity: 0.6,
+          opacity: isNeptune ? 0.12 : 0.6,
         });
+        // Load ring texture if Saturn
+        if (config.id === 'saturn') {
+          this.textureLoader.load(`${import.meta.env.BASE_URL}textures/saturn_ring.png`, (texture) => {
+            ringMat.map = texture;
+            ringMat.color.set(0xffffff);
+            ringMat.needsUpdate = true;
+          });
+        }
         const ringMesh = new THREE.Mesh(ringGeom, ringMat);
         ringMesh.rotation.x = Math.PI / 2 * 0.9; // slight tilt
         mesh.add(ringMesh);
@@ -277,25 +313,29 @@ export class SolarSystem {
         void main() {
           vec3 sunDir = normalize(sunDirection - vPosW);
           float NdotL = dot(vNormalW, sunDir);
-          // Smooth transition across terminator (-0.1 to 0.1)
-          float blend = smoothstep(-0.1, 0.1, NdotL);
+          float blend = smoothstep(-0.05, 0.1, NdotL);
           vec3 day = texture2D(dayMap, vUv).rgb;
           vec3 night = texture2D(nightMap, vUv).rgb;
-          // Day side gets diffuse lighting, night side shows city lights
-          vec3 litDay = day * (0.15 + 0.85 * max(NdotL, 0.0));
-          vec3 litNight = night * 1.5; // boost city lights
+          // Day: full diffuse lighting. Night: only city lights, pure dark otherwise
+          vec3 litDay = day * max(NdotL, 0.0);
+          // Threshold night texture: only show bright pixels (city lights)
+          // Everything else (blue oceans, dark land) goes to pure black
+          float nightLum = dot(night, vec3(0.299, 0.587, 0.114));
+          float cityMask = smoothstep(0.08, 0.2, nightLum);
+          vec3 litNight = night * cityMask * 1.5;
           vec3 color = mix(litNight, litDay, blend);
           gl_FragColor = vec4(color, 1.0);
         }
       `,
     });
 
+    const base = import.meta.env.BASE_URL;
     // Load day texture
-    this.textureLoader.load('/textures/earth.jpg', (texture) => {
+    this.textureLoader.load(`${base}textures/earth.jpg`, (texture) => {
       mat.uniforms.dayMap.value = texture;
     });
     // Load night texture
-    this.textureLoader.load('/textures/earth_night.jpg', (texture) => {
+    this.textureLoader.load(`${base}textures/earth_night.jpg`, (texture) => {
       mat.uniforms.nightMap.value = texture;
     });
 
@@ -304,21 +344,31 @@ export class SolarSystem {
   }
 
   private createStarfield(): void {
-    // Milky Way skybox — use real texture, fall back to procedural
+    // Milky Way skybox — try real texture first, procedural only on failure
     const skyGeom = new THREE.SphereGeometry(STARFIELD_RADIUS, 64, 32);
-    const proceduralSky = generateSkyboxTexture();
     const skyMat = new THREE.MeshBasicMaterial({
-      map: proceduralSky,
+      color: 0x000005,
       side: THREE.BackSide,
     });
     const sky = new THREE.Mesh(skyGeom, skyMat);
     this.scene.add(sky);
 
-    // Try loading real milky way texture
-    this.textureLoader.load('/textures/milkyway.jpg', (texture) => {
-      skyMat.map = texture;
-      skyMat.needsUpdate = true;
-    });
+    this.textureLoader.load(
+      `${import.meta.env.BASE_URL}textures/milkyway.jpg`,
+      (texture) => {
+        skyMat.map = texture;
+        skyMat.color.set(0xffffff);
+        skyMat.needsUpdate = true;
+      },
+      undefined,
+      () => {
+        // Real texture failed — generate procedural fallback
+        const proceduralSky = generateSkyboxTexture();
+        skyMat.map = proceduralSky;
+        skyMat.color.set(0xffffff);
+        skyMat.needsUpdate = true;
+      }
+    );
   }
 
   getBodyCount(): number {

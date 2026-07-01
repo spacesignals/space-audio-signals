@@ -28,6 +28,7 @@ export interface AudioStem {
   buffer: AudioBuffer | null;
   source: AudioBufferSourceNode | null;
   gainNode: GainNode | null;
+  pannerNode: PannerNode | null;
   state: 'unloaded' | 'loading' | 'ready' | 'failed' | 'permanently-failed' | 'evicted';
   url: string;
   lastActiveTime: number; // performance.now() when gain was last > 0

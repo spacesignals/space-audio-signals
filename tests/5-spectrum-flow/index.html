@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>spacesignals — Spectrum Flow</title>
+<style>
+  :root {
+    --bg: #04040c;
+    --panel: rgba(13, 15, 26, 0.7);
+    --border: rgba(255, 255, 255, 0.07);
+    --text: rgba(240, 240, 250, 0.94);
+    --dim: rgba(240, 240, 250, 0.45);
+    --aurora: linear-gradient(90deg, #64d8ff, #9a7bff 45%, #ff7bc8);
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
+  body { font-family: "Inter", system-ui, -apple-system, sans-serif; color: var(--text); }
+  canvas#stars { position: fixed; inset: 0; }
+
+  /* ---------- now playing card ---------- */
+  .now {
+    position: fixed; top: 24px; left: 24px; width: 250px;
+    padding: 18px 20px; border-radius: 16px;
+    background: var(--panel); border: 1px solid var(--border);
+    backdrop-filter: blur(20px);
+    overflow: hidden;
+  }
+  .now::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: var(--aurora); opacity: 0.9;
+  }
+  .now .k { font-size: 9px; letter-spacing: 3px; color: var(--dim); text-transform: uppercase; }
+  .now .body { font-size: 22px; font-weight: 600; letter-spacing: 0.5px; margin: 6px 0 2px; }
+  .now .meta { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .now .stems-line { display: flex; align-items: center; gap: 6px; margin-top: 12px; }
+  .now .stems-line .n { font-size: 10px; color: var(--dim); letter-spacing: 1px; }
+  .now .dots { display: flex; gap: 4px; }
+  .now .dots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.15); }
+  .now .dots i.on { background: #9a7bff; box-shadow: 0 0 8px #9a7bff; }
+
+  /* ---------- top right controls ---------- */
+  .ctl { position: fixed; top: 24px; right: 24px; display: flex; gap: 8px; }
+  .pill {
+    border: 1px solid var(--border); background: var(--panel); backdrop-filter: blur(20px);
+    color: var(--dim); font-size: 11px; letter-spacing: 1px; font-weight: 500;
+    padding: 9px 16px; border-radius: 999px; cursor: pointer;
+    transition: all 0.3s var(--ease);
+  }
+  .pill:hover { color: var(--text); border-color: rgba(255,255,255,0.18); transform: translateY(-1px); }
+  .pill.on {
+    color: var(--text); border-color: transparent;
+    background: linear-gradient(var(--bg), var(--bg)) padding-box, var(--aurora) border-box;
+    border: 1px solid transparent;
+  }
+
+  /* ---------- settings drawer ---------- */
+  .drawer {
+    position: fixed; top: 70px; right: 24px; width: 240px;
+    padding: 18px 20px; border-radius: 16px;
+    background: var(--panel); border: 1px solid var(--border); backdrop-filter: blur(20px);
+    opacity: 0; transform: translateY(-8px); pointer-events: none;
+    transition: opacity 0.35s var(--ease), transform 0.35s var(--ease);
+  }
+  .drawer.open { opacity: 1; transform: none; pointer-events: auto; }
+  .drawer .row { margin: 14px 0; }
+  .drawer .rh { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); margin-bottom: 8px; letter-spacing: 1px; }
+  .drawer .rh output { color: var(--text); }
+  input[type="range"] {
+    -webkit-appearance: none; width: 100%; height: 4px; border-radius: 2px;
+    background: rgba(255,255,255,0.1); outline: none; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: #fff; transition: transform 0.2s var(--ease);
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
+  #vol { background: linear-gradient(90deg, #64d8ff, #9a7bff) 0/80% 100% no-repeat, rgba(255,255,255,0.1); }
+
+  /* ---------- bottom deck ---------- */
+  .deck {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    padding: 14px 20px 18px;
+    background: linear-gradient(transparent, rgba(4, 4, 12, 0.92) 30%);
+    display: flex; flex-direction: column; gap: 12px;
+  }
+
+  /* planet chips row */
+  .chips {
+    display: flex; gap: 8px; overflow-x: auto; padding: 6px 2px;
+    scrollbar-width: none; -webkit-mask-image: linear-gradient(90deg, black 92%, transparent);
+  }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip {
+    display: flex; align-items: center; gap: 9px; flex-shrink: 0;
+    background: var(--panel); border: 1px solid var(--border); backdrop-filter: blur(16px);
+    border-radius: 999px; padding: 7px 15px 7px 8px; cursor: pointer;
+    color: var(--dim); font-size: 12px; font-weight: 500;
+    transition: all 0.3s var(--ease);
+  }
+  .chip:hover { color: var(--text); transform: translateY(-2px); border-color: rgba(255,255,255,0.16); }
+  .chip.active {
+    color: var(--text);
+    background: linear-gradient(rgba(13,15,26,0.9), rgba(13,15,26,0.9)) padding-box, var(--aurora) border-box;
+    border: 1px solid transparent;
+  }
+  .chip .ring {
+    width: 26px; height: 26px; border-radius: 50%; position: relative;
+    display: grid; place-items: center;
+  }
+  .chip .ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+  .chip .ring svg circle { fill: none; stroke-width: 2; }
+  .chip .ring .track { stroke: rgba(255,255,255,0.12); }
+  .chip .ring .prog { stroke: url(#auroraGrad); stroke-linecap: round; transition: stroke-dashoffset 0.5s var(--ease); }
+  .chip .ball { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.5); }
+
+  /* mixer bar */
+  .mixer {
+    display: flex; align-items: center; gap: 20px;
+    background: var(--panel); border: 1px solid var(--border); backdrop-filter: blur(20px);
+    border-radius: 18px; padding: 14px 22px;
+  }
+  .stems { display: flex; align-items: flex-end; gap: 5px; height: 44px; flex: 1; }
+  .stem { display: flex; flex-direction: column; align-items: center; gap: 0; flex: 1; max-width: 46px; height: 100%; justify-content: flex-end; cursor: pointer; }
+  .stem .col {
+    width: 100%; border-radius: 3px 3px 0 0; min-height: 2px;
+    background: linear-gradient(180deg, #9a7bff, #64d8ff);
+    opacity: 0.85; transition: height 0.18s ease-out;
+  }
+  .stem.muted .col { background: rgba(255,255,255,0.14); }
+  .stem .sn { font-size: 8px; letter-spacing: 0.5px; color: var(--dim); margin-top: 5px; text-transform: uppercase; white-space: nowrap; }
+  .mixer .vsep { width: 1px; height: 40px; background: var(--border); }
+
+  .tele { display: flex; flex-direction: column; gap: 3px; min-width: 130px; }
+  .tele .nm { font-size: 13px; font-weight: 600; }
+  .tele .ds { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+  .speedbox { display: flex; flex-direction: column; gap: 7px; width: 170px; }
+  .speedbox .sh { display: flex; justify-content: space-between; gap: 10px; font-size: 10px; letter-spacing: 1px; color: var(--dim); text-transform: uppercase; white-space: nowrap; }
+  .speedbox .sh b { color: var(--text); font-weight: 500; }
+
+  /* ---------- start overlay ---------- */
+  .start {
+    position: fixed; inset: 0; z-index: 50; background: var(--bg);
+    display: grid; place-items: center; cursor: pointer;
+    transition: opacity 1s var(--ease), visibility 1s;
+  }
+  .start.gone { opacity: 0; visibility: hidden; }
+  .start .in { text-align: center; }
+  .start h1 {
+    font-size: 38px; font-weight: 700; letter-spacing: 4px;
+    background: var(--aurora); -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .start p { margin: 12px 0 50px; font-size: 12px; letter-spacing: 3px; color: var(--dim); }
+  .start .wave { display: flex; gap: 5px; justify-content: center; align-items: center; height: 40px; }
+  .start .wave i {
+    width: 4px; border-radius: 2px; background: var(--aurora); background-size: 100% 300%;
+    animation: wv 1.3s ease-in-out infinite;
+  }
+  @keyframes wv { 0%, 100% { height: 8px; } 50% { height: 36px; } }
+  .start .hint { margin-top: 34px; font-size: 11px; letter-spacing: 3px; color: var(--dim); text-transform: uppercase; }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+
+<svg width="0" height="0"><defs>
+  <linearGradient id="auroraGrad" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#64d8ff"/><stop offset="0.5" stop-color="#9a7bff"/><stop offset="1" stop-color="#ff7bc8"/>
+  </linearGradient>
+</defs></svg>
+
+<div class="start" id="start">
+  <div class="in">
+    <h1>spacesignals</h1>
+    <p>every world is an instrument</p>
+    <div class="wave" id="wave"></div>
+    <div class="hint">click to unmute the universe</div>
+  </div>
+</div>
+
+<div class="now">
+  <div class="k">Now sounding</div>
+  <div class="body" id="np-body">Deep Space</div>
+  <div class="meta" id="np-meta">procedural drone · 30%</div>
+  <div class="stems-line"><div class="dots" id="np-dots"></div><span class="n" id="np-n">0 stems</span></div>
+</div>
+
+<div class="ctl">
+  <button class="pill" id="p-tour">Tour</button>
+  <button class="pill" id="p-top">Top view</button>
+  <button class="pill" id="p-labels">Labels</button>
+  <button class="pill" id="p-set">Settings</button>
+</div>
+
+<div class="drawer" id="drawer">
+  <div class="row">
+    <div class="rh"><span>Master volume</span><output id="vol-o">80</output></div>
+    <input type="range" id="vol" min="0" max="100" value="80">
+  </div>
+  <div class="row">
+    <div class="rh"><span>Bloom</span><output id="bloom-o">1.0</output></div>
+    <input type="range" id="bloom" min="0" max="200" value="100">
+  </div>
+  <div class="row">
+    <div class="rh"><span>Drone floor</span><output id="drone-o">30%</output></div>
+    <input type="range" id="drone" min="0" max="100" value="30">
+  </div>
+</div>
+
+<div class="deck">
+  <div class="chips" id="chips"></div>
+  <div class="mixer">
+    <div class="tele">
+      <div class="nm" id="t-nm">Deep Space</div>
+      <div class="ds" id="t-ds">drifting…</div>
+    </div>
+    <div class="vsep"></div>
+    <div class="stems" id="stems"></div>
+    <div class="vsep"></div>
+    <div class="speedbox">
+      <div class="sh"><span>Speed</span><b id="sp-v">15.0 AU/min</b></div>
+      <input type="range" id="speed" min="0" max="100" value="55">
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- starfield ---------- */
+const cvs = document.getElementById('stars'), ctx = cvs.getContext('2d');
+let W, H, stars = [];
+function resize() {
+  W = cvs.width = innerWidth * devicePixelRatio;
+  H = cvs.height = innerHeight * devicePixelRatio;
+  cvs.style.width = innerWidth + 'px'; cvs.style.height = innerHeight + 'px';
+  stars = Array.from({ length: 460 }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    z: 0.15 + Math.random() * 0.85, tw: Math.random() * 7,
+    hue: Math.random() < 0.12 ? (Math.random() < 0.5 ? '200,220,255' : '255,220,240') : '235,238,250',
+  }));
+}
+addEventListener('resize', resize); resize();
+let t0 = 0;
+function frame(t) {
+  const dt = Math.min(t - t0, 50); t0 = t;
+  ctx.fillStyle = '#04040c'; ctx.fillRect(0, 0, W, H);
+  for (const s of stars) {
+    s.x -= 0.05 * s.z * dt * devicePixelRatio;
+    if (s.x < 0) { s.x = W; s.y = Math.random() * H; }
+    s.tw += 0.002 * dt;
+    ctx.fillStyle = `rgba(${s.hue},${0.3 + 0.5 * s.z + 0.18 * Math.sin(s.tw)})`;
+    ctx.fillRect(s.x, s.y, s.z * 1.35 * devicePixelRatio, s.z * 1.35 * devicePixelRatio);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- start wave bars ---------- */
+const wave = document.getElementById('wave');
+for (let i = 0; i < 24; i++) {
+  const b = document.createElement('i');
+  b.style.animationDelay = (i * 0.055) + 's';
+  wave.appendChild(b);
+}
+
+/* ---------- bodies & chips ---------- */
+const BODIES = [
+  ['Sun', '#e8a33d', 2], ['Mercury', '#8c7e6d', 7], ['Venus', '#c4a882', 2], ['Earth', '#4b7be5', 2],
+  ['Moon', '#a9a9a9', 1], ['Mars', '#c1440e', 3], ['Jupiter', '#c88b3a', 3], ['Io', '#c8b040', 1],
+  ['Europa', '#b8a890', 1], ['Saturn', '#e8d191', 3], ['Titan', '#d4a030', 1], ['Uranus', '#73c2cb', 2],
+  ['Neptune', '#3e54e8', 2], ['Triton', '#c8b8a8', 1], ['Pluto', '#c4b28a', 1],
+];
+const chips = document.getElementById('chips');
+const chipEls = [];
+const CIRC = 2 * Math.PI * 12;
+let active = null;
+BODIES.forEach(([name, color, stemCount], i) => {
+  const c = document.createElement('button');
+  c.className = 'chip';
+  c.innerHTML = `
+    <span class="ring">
+      <svg viewBox="0 0 26 26"><circle class="track" cx="13" cy="13" r="12"/><circle class="prog" cx="13" cy="13" r="12" stroke-dasharray="${CIRC}" stroke-dashoffset="${CIRC}"/></svg>
+      <span class="ball" style="background:${color}"></span>
+    </span>${name}`;
+  c.onclick = () => {
+    active?.classList.remove('active');
+    c.classList.add('active'); active = c;
+    flyTo(name, color, stemCount);
+    c.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  };
+  chips.appendChild(c); chipEls.push(c);
+});
+
+/* ---------- stem mixer ---------- */
+const STEM_NAMES = ['drone', 'pad', 'texture', 'tone', 'bass', 'shimmer', 'melody'];
+const stemsEl = document.getElementById('stems');
+const stemBars = [];
+for (let i = 0; i < 7; i++) {
+  const s = document.createElement('div');
+  s.className = 'stem' + (i > 1 ? ' muted' : '');
+  s.innerHTML = `<div class="col" style="height:4%"></div><span class="sn">${STEM_NAMES[i]}</span>`;
+  s.onclick = () => s.classList.toggle('muted');
+  stemsEl.appendChild(s);
+  stemBars.push(s);
+}
+let level = 0.12, phase = Math.random() * 9;
+setInterval(() => {
+  phase += 0.11;
+  stemBars.forEach((s, i) => {
+    const col = s.firstElementChild;
+    if (s.classList.contains('muted')) { col.style.height = '3%'; return; }
+    const v = level * (0.5 + 0.5 * Math.abs(Math.sin(phase * (0.6 + i * 0.23) + i * 2.1)));
+    col.style.height = Math.max(4, v * 100).toFixed(1) + '%';
+  });
+}, 90);
+
+/* ---------- travel sim ---------- */
+const npBody = document.getElementById('np-body'), npMeta = document.getElementById('np-meta');
+const npDots = document.getElementById('np-dots'), npN = document.getElementById('np-n');
+const tNm = document.getElementById('t-nm'), tDs = document.getElementById('t-ds');
+let target = null, dist = 0, activeStems = 0;
+function setDots(n) {
+  npDots.innerHTML = '';
+  for (let i = 0; i < 7; i++) {
+    const d = document.createElement('i');
+    if (i < n) d.className = 'on';
+    npDots.appendChild(d);
+  }
+  npN.textContent = n + (n === 1 ? ' stem' : ' stems');
+}
+setDots(0);
+function flyTo(name, color, stemCount) {
+  target = { name, color, stemCount };
+  dist = 2e8 + Math.random() * 4e8;
+  stemBars.forEach((s, i) => s.classList.toggle('muted', i >= stemCount));
+}
+function fmt(km) {
+  if (km > 1e9) return (km / 1.496e8).toFixed(2) + ' AU';
+  if (km > 1e6) return (km / 1e6).toFixed(1) + 'M km';
+  return Math.round(km).toLocaleString() + ' km';
+}
+setInterval(() => {
+  if (!target) return;
+  dist = Math.max(dist * 0.963, 7e5);
+  const prox = Math.max(0, Math.min(1, 1 - (Math.log10(dist) - 5.8) / 3));
+  level = 0.1 + prox * 0.85;
+  tNm.textContent = target.name; tDs.textContent = fmt(dist);
+  npBody.textContent = prox > 0.25 ? target.name : 'Deep Space';
+  npMeta.textContent = prox > 0.25
+    ? `${target.stemCount} looping stems · gain ${(prox).toFixed(2)}`
+    : `procedural drone · ${Math.round(30 + 60 * (1 - prox))}%`;
+  setDots(prox > 0.25 ? target.stemCount : 0);
+  // update active chip ring
+  if (active) {
+    const prog = active.querySelector('.prog');
+    prog.style.strokeDashoffset = CIRC * (1 - prox);
+  }
+}, 110);
+
+/* ---------- controls ---------- */
+const drawer = document.getElementById('drawer');
+document.getElementById('p-set').onclick = function (e) {
+  e.stopPropagation(); drawer.classList.toggle('open'); this.classList.toggle('on');
+};
+document.getElementById('p-labels').onclick = function () { this.classList.toggle('on'); };
+document.getElementById('p-tour').onclick = () => chipEls[0].click();
+document.getElementById('p-top').onclick = () => {};
+document.addEventListener('click', (e) => {
+  if (!drawer.contains(e.target) && e.target.id !== 'p-set') {
+    drawer.classList.remove('open');
+    document.getElementById('p-set').classList.remove('on');
+  }
+});
+const vol = document.getElementById('vol');
+vol.oninput = () => {
+  document.getElementById('vol-o').textContent = vol.value;
+  vol.style.background = `linear-gradient(90deg,#64d8ff,#9a7bff) 0/${vol.value}% 100% no-repeat, rgba(255,255,255,0.1)`;
+};
+document.getElementById('bloom').oninput = function () {
+  document.getElementById('bloom-o').textContent = (this.value / 100).toFixed(1);
+};
+document.getElementById('drone').oninput = function () {
+  document.getElementById('drone-o').textContent = this.value + '%';
+};
+const speed = document.getElementById('speed');
+speed.oninput = () => {
+  const s = 0.01 * Math.pow(500 / 0.01, speed.value / 100);
+  document.getElementById('sp-v').textContent = s > 2 ? (s * 0.4).toFixed(1) + ' AU/min' : (s * 1000).toFixed(0) + 'k km/s';
+};
+
+document.getElementById('start').onclick = function () {
+  this.classList.add('gone');
+  level = 0.25;
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>spacesignals — Zen Drift</title>
+<style>
+  :root {
+    --text: rgba(240, 238, 232, 0.9);
+    --dim: rgba(240, 238, 232, 0.38);
+    --faint: rgba(240, 238, 232, 0.16);
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #030309; }
+  body {
+    font-family: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+    color: var(--text); user-select: none;
+  }
+  canvas#stars { position: fixed; inset: 0; }
+
+  /* drifting nebula tint */
+  .nebula {
+    position: fixed; inset: -20%;
+    background:
+      radial-gradient(ellipse 45% 40% at 30% 60%, rgba(80, 60, 140, 0.16), transparent 70%),
+      radial-gradient(ellipse 40% 45% at 72% 30%, rgba(40, 90, 130, 0.14), transparent 70%);
+    animation: nebdrift 60s ease-in-out infinite alternate;
+    pointer-events: none;
+  }
+  @keyframes nebdrift {
+    from { transform: translate(0, 0) rotate(0deg); }
+    to { transform: translate(4%, -3%) rotate(3deg); }
+  }
+
+  /* ---------- bottom center: now line ---------- */
+  .nowline {
+    position: fixed; bottom: 110px; left: 0; right: 0;
+    text-align: center; pointer-events: none;
+    transition: opacity 0.7s var(--ease);
+  }
+  body.menu-open .nowline { opacity: 0.08; }
+  .nowline .body {
+    font-size: 34px; font-weight: 300; letter-spacing: 14px; text-indent: 14px;
+    text-transform: lowercase; transition: opacity 1s var(--ease);
+  }
+  .nowline .dist {
+    margin-top: 10px; font-size: 13px; letter-spacing: 6px; text-indent: 6px;
+    color: var(--dim); font-variant-numeric: tabular-nums;
+    font-family: system-ui, sans-serif; font-weight: 300; font-size: 11px;
+  }
+
+  /* ---------- the breathing orb (menu trigger) ---------- */
+  .orb-btn {
+    position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+    width: 40px; height: 40px; border-radius: 50%;
+    border: 1px solid var(--dim); background: transparent; cursor: pointer;
+    transition: transform 0.6s var(--ease), border-color 0.6s;
+    z-index: 5;
+  }
+  .orb-btn::before {
+    content: ''; position: absolute; inset: 12px; border-radius: 50%;
+    background: var(--text); opacity: 0.85;
+    animation: pulse 4.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(0.72); opacity: 0.45; }
+    50% { transform: scale(1); opacity: 0.9; }
+  }
+  .orb-btn:hover { border-color: var(--text); }
+  body.menu-open .orb-btn { transform: translateX(-50%) rotate(45deg); }
+  body.menu-open .orb-btn::before { animation: none; opacity: 0.9;
+    clip-path: polygon(46% 0, 54% 0, 54% 46%, 100% 46%, 100% 54%, 54% 54%, 54% 100%, 46% 100%, 46% 54%, 0 54%, 0 46%, 46% 46%);
+    background: var(--text); border-radius: 0; inset: 8px;
+  }
+
+  /* ---------- radial constellation menu ---------- */
+  .constellation {
+    position: fixed; bottom: 60px; left: 50%; width: 0; height: 0;
+    pointer-events: none; z-index: 4;
+  }
+  .c-item {
+    position: absolute; left: 0; top: 0;
+    transform: translate(-50%, -50%);
+    background: none; border: none; cursor: pointer; color: var(--dim);
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.5s var(--ease), transform 0.7s var(--ease), color 0.4s;
+    font-family: inherit;
+  }
+  body.menu-open .c-item { opacity: 1; pointer-events: auto; }
+  .c-item .pt {
+    width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+    box-shadow: 0 0 12px currentColor; transition: transform 0.4s var(--ease);
+  }
+  .c-item:hover { color: var(--text); }
+  .c-item:hover .pt { transform: scale(1.7); }
+  .c-item .nm { font-size: 14px; letter-spacing: 4px; text-transform: lowercase; }
+  .c-item.sel { color: var(--text); }
+
+  /* connecting arc line */
+  svg.arc {
+    position: fixed; inset: 0; pointer-events: none; z-index: 3;
+    opacity: 0; transition: opacity 0.8s var(--ease);
+  }
+  body.menu-open svg.arc { opacity: 1; }
+
+  /* ---------- corner whispers ---------- */
+  .whisper {
+    position: fixed; font-family: system-ui, sans-serif;
+    font-size: 10px; letter-spacing: 4px; text-transform: uppercase;
+    color: var(--faint); cursor: pointer; background: none; border: none;
+    padding: 10px; transition: color 0.5s;
+  }
+  .whisper:hover { color: var(--dim); }
+  .whisper.tl { top: 22px; left: 22px; }
+  .whisper.tr { top: 22px; right: 22px; }
+
+  /* ---------- quiet settings sheet ---------- */
+  .sheet {
+    position: fixed; inset: 0; z-index: 20;
+    display: grid; place-items: center;
+    background: rgba(3, 3, 9, 0.82); backdrop-filter: blur(8px);
+    opacity: 0; pointer-events: none; transition: opacity 0.6s var(--ease);
+  }
+  .sheet.open { opacity: 1; pointer-events: auto; }
+  .sheet .inner { width: 300px; text-align: center; }
+  .sheet h3 { font-weight: 300; font-size: 22px; letter-spacing: 8px; text-transform: lowercase; margin-bottom: 44px; }
+  .sh-row { margin: 30px 0; }
+  .sh-row .k {
+    font-family: system-ui, sans-serif; font-size: 10px; letter-spacing: 4px;
+    text-transform: uppercase; color: var(--dim); display: block; margin-bottom: 14px;
+  }
+  input[type="range"] {
+    -webkit-appearance: none; width: 100%; height: 1px; background: var(--faint);
+    outline: none; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
+    background: #030309; border: 1px solid var(--text);
+    transition: background 0.3s;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { background: var(--text); }
+  .sh-toggle {
+    font-family: system-ui, sans-serif; font-size: 10px; letter-spacing: 4px;
+    text-transform: uppercase; background: none; cursor: pointer;
+    color: var(--dim); border: 1px solid var(--faint); border-radius: 999px;
+    padding: 9px 22px; margin: 4px; transition: all 0.4s;
+  }
+  .sh-toggle.on { color: var(--text); border-color: var(--dim); }
+  .sheet .close { margin-top: 40px; color: var(--faint); border: none; }
+  .sheet .close:hover { color: var(--text); }
+
+  /* ---------- start ---------- */
+  .start {
+    position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
+    background: #030309; cursor: pointer;
+    transition: opacity 1.6s var(--ease), visibility 1.6s;
+  }
+  .start.gone { opacity: 0; visibility: hidden; }
+  .start .in { text-align: center; }
+  .start h1 { font-size: 40px; font-weight: 300; letter-spacing: 18px; text-indent: 18px; text-transform: lowercase; opacity: 0.92; }
+  .start p {
+    margin-top: 18px; font-family: system-ui, sans-serif; font-size: 10px;
+    letter-spacing: 5px; text-transform: uppercase; color: var(--dim);
+  }
+  .start .breath {
+    width: 10px; height: 10px; border-radius: 50%; background: var(--text);
+    margin: 70px auto 0; animation: pulse 4.5s ease-in-out infinite;
+  }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+<div class="nebula"></div>
+
+<div class="start" id="start">
+  <div class="in">
+    <h1>spacesignals</h1>
+    <p>breathe in &nbsp;·&nbsp; drift out</p>
+    <div class="breath"></div>
+  </div>
+</div>
+
+<button class="whisper tl" id="w-settings">settings</button>
+<button class="whisper tr" id="w-tour">journey</button>
+
+<div class="nowline">
+  <div class="body" id="now-body">deep space</div>
+  <div class="dist" id="now-dist">the drone hums between worlds</div>
+</div>
+
+<svg class="arc" id="arc"></svg>
+<div class="constellation" id="constellation"></div>
+<button class="orb-btn" id="orb" title="Choose a world"></button>
+
+<div class="sheet" id="sheet">
+  <div class="inner">
+    <h3>settings</h3>
+    <div class="sh-row"><span class="k">volume</span><input type="range" min="0" max="100" value="75"></div>
+    <div class="sh-row"><span class="k">glow</span><input type="range" min="0" max="200" value="100"></div>
+    <div class="sh-row"><span class="k">drift speed</span><input type="range" id="drift" min="0" max="100" value="40"></div>
+    <div>
+      <button class="sh-toggle" id="t-labels">labels</button>
+      <button class="sh-toggle on" id="t-bg">background audio</button>
+    </div>
+    <button class="whisper close" id="sheet-close">return</button>
+  </div>
+</div>
+
+<script>
+/* ---------- soft starfield ---------- */
+const cvs = document.getElementById('stars'), ctx = cvs.getContext('2d');
+let W, H, stars = [];
+function resize() {
+  W = cvs.width = innerWidth * devicePixelRatio;
+  H = cvs.height = innerHeight * devicePixelRatio;
+  cvs.style.width = innerWidth + 'px'; cvs.style.height = innerHeight + 'px';
+  stars = Array.from({ length: 300 }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    z: 0.15 + Math.random() * 0.85, tw: Math.random() * 7,
+  }));
+}
+addEventListener('resize', resize); resize();
+let drift = 0.018, t0 = 0;
+function frame(t) {
+  const dt = Math.min(t - t0, 50); t0 = t;
+  ctx.fillStyle = '#030309'; ctx.fillRect(0, 0, W, H);
+  for (const s of stars) {
+    s.x -= drift * s.z * dt * devicePixelRatio;
+    s.y += drift * 0.3 * s.z * dt * devicePixelRatio;
+    if (s.x < 0) s.x = W; if (s.y > H) s.y = 0;
+    s.tw += 0.0012 * dt;
+    const a = 0.2 + 0.45 * s.z + 0.22 * Math.sin(s.tw);
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.z * 1.1 * devicePixelRatio, 0, 7);
+    ctx.fillStyle = `rgba(235,232,244,${a})`;
+    ctx.fill();
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- constellation menu ---------- */
+const WORLDS = [
+  ['sun', '#e8c37a'], ['mercury', '#b0a190'], ['venus', '#ddc19a'], ['earth', '#8fb7ef'],
+  ['mars', '#d4795a'], ['jupiter', '#d3a86e'], ['saturn', '#e3cf9b'], ['uranus', '#93cdd4'],
+  ['neptune', '#7a8ce8'], ['pluto', '#cbbb9a'],
+];
+const constellation = document.getElementById('constellation');
+const arc = document.getElementById('arc');
+const items = [];
+WORLDS.forEach(([name, color], i) => {
+  const b = document.createElement('button');
+  b.className = 'c-item';
+  b.innerHTML = `<span class="pt" style="color:${color}"></span><span class="nm">${name}</span>`;
+  b.onclick = (e) => { e.stopPropagation(); select(name, b); };
+  constellation.appendChild(b);
+  items.push(b);
+});
+function layout() {
+  const n = items.length;
+  const R = Math.min(innerWidth * 0.36, 330);
+  items.forEach((b, i) => {
+    // arc from 160° to 20° (left to right over the orb); alternate items
+    // staggered vertically so adjacent labels never collide
+    const a = Math.PI * (1 - 0.12) - (i / (n - 1)) * Math.PI * (1 - 0.24);
+    const x = Math.cos(a) * R;
+    const y = -Math.sin(a) * (R * 0.55) - 40 + (i % 2 ? -30 : 12);
+    b.style.transform = document.body.classList.contains('menu-open')
+      ? `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`
+      : `translate(-50%, -50%)`;
+  });
+  // arc path
+  const cx = innerWidth / 2, cy = innerHeight - 60;
+  let d = '';
+  items.forEach((b, i) => {
+    const n2 = items.length;
+    const a = Math.PI * (1 - 0.12) - (i / (n2 - 1)) * Math.PI * (1 - 0.24);
+    const x = cx + Math.cos(a) * R;
+    const y = cy - Math.sin(a) * (R * 0.55) - 40 + (i % 2 ? -30 : 12);
+    d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+  });
+  arc.setAttribute('viewBox', `0 0 ${innerWidth} ${innerHeight}`);
+  arc.innerHTML = `<path d="${d}" fill="none" stroke="rgba(240,238,232,0.1)" stroke-width="1" stroke-dasharray="2 6"/>`;
+}
+addEventListener('resize', layout);
+
+const orb = document.getElementById('orb');
+orb.onclick = (e) => {
+  e.stopPropagation();
+  document.body.classList.toggle('menu-open');
+  layout();
+};
+document.addEventListener('click', () => {
+  if (document.body.classList.contains('menu-open')) {
+    document.body.classList.remove('menu-open'); layout();
+  }
+});
+
+/* ---------- travel poetry ---------- */
+const nowBody = document.getElementById('now-body'), nowDist = document.getElementById('now-dist');
+let target = null, dist = 0, selEl = null;
+const MOODS = {
+  sun: 'warmth swells through every stem', mercury: 'seven pads shimmer in the heat',
+  venus: 'clouded tones, thick and golden', earth: 'home frequencies, blue and familiar',
+  mars: 'dry winds carry a thin drone', jupiter: 'vast bass beneath banded storms',
+  saturn: 'rings ring softly', uranus: 'a tilted, distant hum',
+  neptune: 'the deepest blue of the mix', pluto: 'the quietest signal of all',
+};
+function select(name, el) {
+  selEl?.classList.remove('sel');
+  el.classList.add('sel'); selEl = el;
+  target = name; dist = 2e8 + Math.random() * 4e8;
+  document.body.classList.remove('menu-open'); layout();
+  nowBody.style.opacity = 0;
+  setTimeout(() => { nowBody.textContent = name; nowBody.style.opacity = 1; }, 500);
+}
+function fmt(km) {
+  if (km > 1e9) return (km / 1.496e8).toFixed(2) + ' au away';
+  if (km > 1e6) return (km / 1e6).toFixed(1) + ' million km away';
+  return Math.round(km).toLocaleString() + ' km away';
+}
+setInterval(() => {
+  if (!target) return;
+  dist = Math.max(dist * 0.968, 9e5);
+  nowDist.textContent = dist <= 1e6 ? (MOODS[target] || 'you have arrived') : fmt(dist);
+}, 120);
+
+/* ---------- sheet ---------- */
+const sheet = document.getElementById('sheet');
+document.getElementById('w-settings').onclick = (e) => { e.stopPropagation(); sheet.classList.add('open'); };
+document.getElementById('sheet-close').onclick = () => sheet.classList.remove('open');
+sheet.addEventListener('click', (e) => { if (e.target === sheet) sheet.classList.remove('open'); });
+document.querySelectorAll('.sh-toggle').forEach(t => t.onclick = () => t.classList.toggle('on'));
+document.getElementById('drift').oninput = function () { drift = 0.004 + (this.value / 100) * 0.08; };
+document.getElementById('w-tour').onclick = () => {
+  const order = WORLDS.map(w => w[0]);
+  let i = 0;
+  const step = () => {
+    if (i >= order.length) return;
+    select(order[i], items[i]); i++;
+    setTimeout(step, 6000);
+  };
+  step();
+};
+
+/* ---------- start ---------- */
+document.getElementById('start').onclick = function () {
+  this.classList.add('gone');
+};
+layout();
+</script>
+</body>
+</html>

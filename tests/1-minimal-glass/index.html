@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>spacesignals — Minimal Glass</title>
+<style>
+  :root {
+    --glass: rgba(10, 14, 24, 0.55);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --text: rgba(235, 240, 250, 0.92);
+    --text-dim: rgba(235, 240, 250, 0.45);
+    --accent: #7fb4ff;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #01020a; }
+  body { font-family: "Inter", system-ui, -apple-system, sans-serif; color: var(--text); }
+  canvas#stars { position: fixed; inset: 0; display: block; }
+
+  /* ---------- UI fades away when idle ---------- */
+  #ui { position: fixed; inset: 0; pointer-events: none; transition: opacity 1.2s var(--ease); }
+  #ui.idle { opacity: 0; }
+  #ui > * { pointer-events: auto; }
+
+  .glass {
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(18px) saturate(1.3);
+    -webkit-backdrop-filter: blur(18px) saturate(1.3);
+    border-radius: 14px;
+  }
+
+  /* ---------- wordmark ---------- */
+  .wordmark {
+    position: absolute; top: 24px; left: 28px;
+    font-size: 12px; font-weight: 300; letter-spacing: 5px;
+    color: var(--text-dim); text-transform: lowercase; user-select: none;
+  }
+
+  /* ---------- bottom pill bar ---------- */
+  .bar {
+    position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 22px;
+    padding: 12px 24px; border-radius: 999px;
+    max-width: calc(100vw - 28px); flex-wrap: wrap; justify-content: center; row-gap: 8px;
+    transition: transform 0.5s var(--ease), box-shadow 0.5s var(--ease);
+  }
+  @media (max-width: 640px) {
+    .bar { gap: 14px; padding: 10px 18px; border-radius: 20px; }
+    .bar .divider { display: none; }
+  }
+  .bar:hover { box-shadow: 0 8px 40px rgba(127, 180, 255, 0.08); }
+  .telemetry { display: flex; flex-direction: column; gap: 1px; min-width: 150px; }
+  .telemetry .body-name { font-size: 13px; font-weight: 500; letter-spacing: 0.5px; }
+  .telemetry .dist { font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .divider { width: 1px; height: 26px; background: var(--glass-border); }
+
+  .speed-wrap { display: flex; align-items: center; gap: 10px; }
+  .speed-wrap .label { font-size: 10px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none; width: 130px; height: 2px;
+    background: rgba(255,255,255,0.15); border-radius: 1px; outline: none; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--accent); transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease);
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.4); box-shadow: 0 0 12px var(--accent); }
+  .speed-val { font-size: 11px; color: var(--text-dim); min-width: 70px; font-variant-numeric: tabular-nums; }
+
+  .icon-btn {
+    width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
+    background: transparent; color: var(--text-dim); display: grid; place-items: center;
+    transition: color 0.3s, background 0.3s, transform 0.4s var(--ease);
+  }
+  .icon-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); transform: rotate(30deg); }
+  .icon-btn svg { width: 17px; height: 17px; }
+
+  /* ---------- right rail: planet dots ---------- */
+  .rail {
+    position: absolute; right: 22px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 4px; padding: 10px 8px;
+  }
+  .dot-row {
+    display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+    padding: 4px 6px; border-radius: 8px; cursor: pointer; border: none; background: none;
+    color: var(--text); transition: background 0.25s;
+  }
+  .dot-row:hover { background: rgba(255,255,255,0.05); }
+  .dot-row .name {
+    font-size: 11px; letter-spacing: 1.5px; color: var(--text-dim);
+    opacity: 0; transform: translateX(6px); transition: opacity 0.3s var(--ease), transform 0.3s var(--ease);
+    white-space: nowrap;
+  }
+  .rail:hover .dot-row .name { opacity: 1; transform: translateX(0); }
+  .dot-row.active .name { opacity: 1; transform: translateX(0); color: var(--accent); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; transition: transform 0.3s var(--ease), box-shadow 0.3s; }
+  .dot-row:hover .dot { transform: scale(1.5); }
+  .dot-row.active .dot { transform: scale(1.6); box-shadow: 0 0 10px currentColor; }
+
+  /* ---------- settings card ---------- */
+  .settings {
+    position: absolute; bottom: 92px; left: 50%;
+    transform: translateX(-50%) translateY(12px) scale(0.97);
+    width: 280px; padding: 20px 22px;
+    opacity: 0; pointer-events: none !important;
+    transition: opacity 0.35s var(--ease), transform 0.35s var(--ease);
+  }
+  .settings.open { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); pointer-events: auto !important; }
+  .settings h4 { font-size: 10px; font-weight: 500; letter-spacing: 3px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 16px; }
+  .settings .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0; font-size: 12px; }
+  .settings .row input[type="range"] { width: 120px; }
+  .switch { position: relative; width: 32px; height: 18px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 100%; height: 100%; position: absolute; cursor: pointer; z-index: 1; }
+  .switch .track { position: absolute; inset: 0; border-radius: 999px; background: rgba(255,255,255,0.12); transition: background 0.3s; }
+  .switch .thumb { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--text-dim); transition: transform 0.3s var(--ease), background 0.3s; }
+  .switch input:checked ~ .track { background: rgba(127, 180, 255, 0.35); }
+  .switch input:checked ~ .thumb { transform: translateX(14px); background: var(--accent); }
+
+  /* ---------- start overlay ---------- */
+  .start {
+    position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
+    background: radial-gradient(ellipse at 50% 60%, #050a18 0%, #01020a 70%);
+    cursor: pointer; transition: opacity 1s var(--ease);
+  }
+  .start.gone { opacity: 0; pointer-events: none; }
+  .start .inner { text-align: center; }
+  .start h1 { font-size: 30px; font-weight: 200; letter-spacing: 12px; margin-bottom: 14px; color: #e6ddc4; }
+  .start p { font-size: 12px; letter-spacing: 3px; color: var(--text-dim); margin-bottom: 60px; }
+  .start .cue { font-size: 11px; letter-spacing: 4px; color: var(--text-dim); text-transform: uppercase; animation: breathe 3.2s ease-in-out infinite; }
+  @keyframes breathe { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.9; } }
+
+  /* traveling toast */
+  .toast {
+    position: absolute; top: 28px; left: 50%; transform: translateX(-50%) translateY(-8px);
+    padding: 8px 18px; font-size: 11px; letter-spacing: 2px; color: var(--text-dim);
+    opacity: 0; transition: opacity 0.4s var(--ease), transform 0.4s var(--ease);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast b { color: var(--accent); font-weight: 500; }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+
+<div class="start" id="start">
+  <div class="inner">
+    <h1>spacesignals</h1>
+    <p>stemming and stimming through time and space</p>
+    <div class="cue">tap anywhere to begin</div>
+  </div>
+</div>
+
+<div id="ui">
+  <div class="wordmark">spacesignals</div>
+  <div class="toast glass" id="toast">flying to <b id="toast-body">Mercury</b></div>
+
+  <div class="rail glass" id="rail"></div>
+
+  <div class="settings glass" id="settings">
+    <h4>Settings</h4>
+    <div class="row">Volume <input type="range" id="vol" min="0" max="100" value="80"></div>
+    <div class="row">Bloom <input type="range" id="bloom" min="0" max="200" value="100"></div>
+    <div class="row">Labels
+      <span class="switch"><input type="checkbox" id="labels"><span class="track"></span><span class="thumb"></span></span>
+    </div>
+    <div class="row">Background audio
+      <span class="switch"><input type="checkbox" checked><span class="track"></span><span class="thumb"></span></span>
+    </div>
+  </div>
+
+  <div class="bar glass">
+    <div class="telemetry">
+      <div class="body-name" id="near-name">Deep Space</div>
+      <div class="dist" id="near-dist">—</div>
+    </div>
+    <div class="divider"></div>
+    <div class="speed-wrap">
+      <span class="label">Speed</span>
+      <input type="range" id="speed" min="0" max="100" value="55">
+      <span class="speed-val" id="speed-val">15.0 AU/min</span>
+    </div>
+    <div class="divider"></div>
+    <button class="icon-btn" id="gear" title="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<script>
+/* ---------- starfield ---------- */
+const cvs = document.getElementById('stars');
+const ctx = cvs.getContext('2d');
+let W, H, stars = [];
+function resize() {
+  W = cvs.width = innerWidth * devicePixelRatio;
+  H = cvs.height = innerHeight * devicePixelRatio;
+  cvs.style.width = innerWidth + 'px'; cvs.style.height = innerHeight + 'px';
+  stars = Array.from({ length: 420 }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    z: 0.2 + Math.random() * 0.8, tw: Math.random() * Math.PI * 2,
+  }));
+}
+addEventListener('resize', resize); resize();
+let vx = 0.06, t0 = 0;
+function frame(t) {
+  const dt = t - t0; t0 = t;
+  ctx.fillStyle = '#01020a'; ctx.fillRect(0, 0, W, H);
+  for (const s of stars) {
+    s.x -= vx * s.z * dt * devicePixelRatio;
+    if (s.x < 0) { s.x = W; s.y = Math.random() * H; }
+    s.tw += 0.002 * dt;
+    const a = 0.35 + 0.5 * s.z + 0.15 * Math.sin(s.tw);
+    ctx.fillStyle = `rgba(215,225,255,${a})`;
+    const r = s.z * 1.3 * devicePixelRatio;
+    ctx.fillRect(s.x, s.y, r, r);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- data ---------- */
+const BODIES = [
+  ['Sun', '#ffcf70'], ['Mercury', '#a89684'], ['Venus', '#e0c290'], ['Earth', '#6ca6ff'],
+  ['Moon', '#c8c8c8'], ['Mars', '#e06b45'], ['Ceres', '#9a9a8a'], ['Jupiter', '#d4a65a'],
+  ['Io', '#c8b040'], ['Europa', '#b8a890'], ['Saturn', '#e8d191'], ['Titan', '#d4a030'],
+  ['Uranus', '#73c2cb'], ['Neptune', '#5070ff'], ['Triton', '#c8b8a8'], ['Pluto', '#c4b28a'],
+];
+
+/* ---------- rail ---------- */
+const rail = document.getElementById('rail');
+let activeRow = null;
+BODIES.forEach(([name, color]) => {
+  const b = document.createElement('button');
+  b.className = 'dot-row';
+  b.innerHTML = `<span class="name">${name}</span><span class="dot" style="background:${color};color:${color}"></span>`;
+  b.onclick = () => {
+    activeRow?.classList.remove('active');
+    b.classList.add('active'); activeRow = b;
+    flyTo(name);
+  };
+  rail.appendChild(b);
+});
+
+/* ---------- telemetry sim ---------- */
+const nearName = document.getElementById('near-name');
+const nearDist = document.getElementById('near-dist');
+const toast = document.getElementById('toast');
+const toastBody = document.getElementById('toast-body');
+let target = null, dist = 3.2e8, toastTimer;
+function flyTo(name) {
+  target = name;
+  dist = 2e8 + Math.random() * 4e8;
+  toastBody.textContent = name;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
+}
+function fmt(km) {
+  if (km > 1e9) return (km / 1.496e8).toFixed(2) + ' AU';
+  if (km > 1e6) return (km / 1e6).toFixed(1) + 'M km';
+  return Math.round(km).toLocaleString() + ' km';
+}
+setInterval(() => {
+  if (target) {
+    dist = Math.max(dist * 0.965, 1.2e6);
+    nearName.textContent = target;
+    nearDist.textContent = fmt(dist);
+  }
+}, 100);
+
+/* ---------- speed slider ---------- */
+const speed = document.getElementById('speed');
+const speedVal = document.getElementById('speed-val');
+function updSpeed() {
+  const pct = speed.value / 100;
+  const s = 0.01 * Math.pow(500 / 0.01, pct);
+  speedVal.textContent = s > 2 ? (s * 0.4).toFixed(1) + ' AU/min' : (s * 1000).toFixed(0) + 'k km/s';
+}
+speed.oninput = updSpeed; updSpeed();
+
+/* ---------- settings ---------- */
+const settings = document.getElementById('settings');
+document.getElementById('gear').onclick = (e) => { e.stopPropagation(); settings.classList.toggle('open'); };
+document.addEventListener('click', (e) => {
+  if (!settings.contains(e.target)) settings.classList.remove('open');
+});
+
+/* ---------- idle fade ---------- */
+const ui = document.getElementById('ui');
+let idleTimer;
+function wake() {
+  ui.classList.remove('idle');
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => ui.classList.add('idle'), 4000);
+}
+['mousemove', 'pointerdown', 'keydown', 'touchstart'].forEach(ev => addEventListener(ev, wake));
+wake();
+
+/* ---------- start overlay ---------- */
+const start = document.getElementById('start');
+start.onclick = () => { start.classList.add('gone'); vx = 0.14; };
+</script>
+</body>
+</html>

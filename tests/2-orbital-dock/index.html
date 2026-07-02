@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>spacesignals — Orbital Dock</title>
+<style>
+  :root {
+    --bg: #020308;
+    --panel: rgba(14, 18, 30, 0.72);
+    --border: rgba(255, 255, 255, 0.07);
+    --text: rgba(238, 242, 250, 0.94);
+    --dim: rgba(238, 242, 250, 0.42);
+    --accent: #8fd0ff;
+    --ease: cubic-bezier(0.34, 1.3, 0.5, 1);
+    --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text); }
+  canvas#stars { position: fixed; inset: 0; }
+
+  /* ---------- top telemetry strip ---------- */
+  .strip {
+    position: fixed; top: 0; left: 0; right: 0; height: 44px;
+    display: flex; align-items: center; justify-content: center; gap: 28px;
+    font-size: 11px; letter-spacing: 2px; color: var(--dim);
+    background: linear-gradient(rgba(2,3,8,0.8), transparent);
+    text-transform: uppercase; user-select: none;
+  }
+  .strip b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+  .strip .sep { width: 3px; height: 3px; border-radius: 50%; background: var(--dim); }
+
+  /* ---------- the dock ---------- */
+  .dock-wrap {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    max-width: 94vw;
+  }
+  .dock {
+    display: flex; align-items: flex-end; gap: 6px;
+    padding: 10px 16px 8px; border-radius: 22px;
+    background: var(--panel); border: 1px solid var(--border);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .dock::-webkit-scrollbar { display: none; }
+  .planet {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    background: none; border: none; cursor: pointer; color: var(--dim);
+    padding: 0 3px; flex-shrink: 0;
+    transition: color 0.25s;
+  }
+  .planet .orb {
+    width: 34px; height: 34px; border-radius: 50%;
+    position: relative;
+    transition: transform 0.35s var(--ease), box-shadow 0.35s var(--ease-soft);
+    box-shadow: inset -6px -5px 10px rgba(0,0,0,0.55);
+  }
+  .planet .orb::after { /* specular highlight */
+    content: ''; position: absolute; top: 15%; left: 18%;
+    width: 30%; height: 22%; border-radius: 50%;
+    background: rgba(255,255,255,0.35); filter: blur(2px);
+  }
+  .planet:hover .orb { transform: translateY(-10px) scale(1.35); }
+  .planet:hover { color: var(--text); }
+  .planet .lbl { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; transition: opacity 0.25s; opacity: 0; height: 11px; }
+  .planet:hover .lbl, .planet.active .lbl { opacity: 1; }
+  .planet.active .orb { box-shadow: inset -6px -5px 10px rgba(0,0,0,0.55), 0 0 16px 2px currentColor; }
+  .planet.active { color: var(--accent); }
+  .planet .ringed { position: absolute; inset: -5px -9px; border-radius: 50%; border: 2px solid rgba(220,200,150,0.5); transform: rotateX(70deg); }
+
+  /* dock secondary row: actions */
+  .dock-actions { display: flex; gap: 8px; }
+  .chip {
+    border: 1px solid var(--border); background: var(--panel); color: var(--dim);
+    backdrop-filter: blur(20px);
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    padding: 7px 16px; border-radius: 999px; cursor: pointer;
+    transition: color 0.25s, border-color 0.25s, background 0.25s;
+  }
+  .chip:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+  .chip.on { color: var(--accent); border-color: rgba(143, 208, 255, 0.4); background: rgba(143, 208, 255, 0.07); }
+
+  /* ---------- side settings panel ---------- */
+  .panel {
+    position: fixed; top: 60px; right: 20px; width: 250px;
+    padding: 20px; border-radius: 16px;
+    background: var(--panel); border: 1px solid var(--border);
+    backdrop-filter: blur(20px);
+    transform: translateX(20px); opacity: 0; pointer-events: none;
+    transition: transform 0.4s var(--ease-soft), opacity 0.4s var(--ease-soft);
+  }
+  .panel.open { transform: translateX(0); opacity: 1; pointer-events: auto; }
+  .panel h4 { font-size: 10px; letter-spacing: 3px; color: var(--dim); text-transform: uppercase; margin-bottom: 14px; }
+  .panel .row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; font-size: 11px; letter-spacing: 1px; color: var(--dim); text-transform: uppercase; }
+  .panel .row output { color: var(--text); float: right; }
+  .panel .row-head { display: flex; justify-content: space-between; }
+  input[type="range"] {
+    -webkit-appearance: none; width: 100%; height: 3px; border-radius: 2px;
+    background: rgba(255,255,255,0.12); outline: none; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); border: 3px solid #0a1020;
+    transition: transform 0.2s var(--ease);
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.25); }
+
+  /* ---------- travel banner ---------- */
+  .banner {
+    position: fixed; top: 62px; left: 50%; transform: translateX(-50%);
+    text-align: center; opacity: 0; transition: opacity 0.5s var(--ease-soft);
+    pointer-events: none;
+  }
+  .banner.show { opacity: 1; }
+  .banner .to { font-size: 10px; letter-spacing: 4px; color: var(--dim); text-transform: uppercase; margin-bottom: 6px; }
+  .banner .name { font-size: 26px; font-weight: 200; letter-spacing: 8px; }
+  .banner .bar { width: 140px; height: 1px; background: rgba(255,255,255,0.12); margin: 12px auto 0; overflow: hidden; }
+  .banner .bar i { display: block; height: 100%; width: 40%; background: var(--accent); animation: slide 1.4s var(--ease-soft) infinite; }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(350%); } }
+
+  /* ---------- start overlay ---------- */
+  .start {
+    position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
+    background: radial-gradient(ellipse at 50% 45%, #060b1a 0%, #020308 75%);
+    cursor: pointer; transition: opacity 0.9s var(--ease-soft), visibility 0.9s;
+  }
+  .start.gone { opacity: 0; visibility: hidden; }
+  .start .ring {
+    width: 130px; height: 130px; border-radius: 50%;
+    border: 1px solid rgba(143,208,255,0.35);
+    display: grid; place-items: center; margin: 0 auto 34px;
+    animation: spin-ring 14s linear infinite; position: relative;
+  }
+  .start .ring::before {
+    content: ''; position: absolute; top: -4px; left: 50%; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent);
+  }
+  .start .core { width: 44px; height: 44px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffe9b0, #c98a2e); box-shadow: 0 0 40px rgba(255,200,90,0.5); }
+  @keyframes spin-ring { to { transform: rotate(360deg); } }
+  .start h1 { font-size: 26px; font-weight: 200; letter-spacing: 10px; text-align: center; margin-bottom: 10px; }
+  .start p { font-size: 11px; letter-spacing: 3px; color: var(--dim); text-align: center; }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+
+<div class="start" id="start">
+  <div>
+    <div class="ring"><div class="core"></div></div>
+    <h1>SPACESIGNALS</h1>
+    <p>click to enter the system</p>
+  </div>
+</div>
+
+<div class="strip">
+  <span>Nearest <b id="near">Deep Space</b></span>
+  <span class="sep"></span>
+  <span>Distance <b id="dist">—</b></span>
+  <span class="sep"></span>
+  <span>Speed <b id="spd">15.0 AU/min</b></span>
+</div>
+
+<div class="banner" id="banner">
+  <div class="to">flying to</div>
+  <div class="name" id="banner-name">MERCURY</div>
+  <div class="bar"><i></i></div>
+</div>
+
+<div class="panel" id="panel">
+  <h4>Settings</h4>
+  <div class="row">
+    <div class="row-head"><span>Volume</span><output id="vol-out">80</output></div>
+    <input type="range" id="vol" min="0" max="100" value="80">
+  </div>
+  <div class="row">
+    <div class="row-head"><span>Bloom</span><output id="bloom-out">100</output></div>
+    <input type="range" id="bloom" min="0" max="200" value="100">
+  </div>
+  <div class="row">
+    <div class="row-head"><span>Flight speed</span><output id="speed-out">55</output></div>
+    <input type="range" id="speed" min="0" max="100" value="55">
+  </div>
+</div>
+
+<div class="dock-wrap">
+  <div class="dock" id="dock"></div>
+  <div class="dock-actions">
+    <button class="chip" id="tour">Grand Tour</button>
+    <button class="chip" id="top">Top View</button>
+    <button class="chip" id="labels">Labels</button>
+    <button class="chip" id="gear">Settings</button>
+  </div>
+</div>
+
+<script>
+/* ---------- starfield with drift ---------- */
+const cvs = document.getElementById('stars'), ctx = cvs.getContext('2d');
+let W, H, stars = [];
+function resize() {
+  W = cvs.width = innerWidth * devicePixelRatio;
+  H = cvs.height = innerHeight * devicePixelRatio;
+  cvs.style.width = innerWidth + 'px'; cvs.style.height = innerHeight + 'px';
+  stars = Array.from({ length: 500 }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    z: 0.15 + Math.random() * 0.85, tw: Math.random() * 7,
+  }));
+}
+addEventListener('resize', resize); resize();
+let warp = 0, t0 = 0;
+function frame(t) {
+  const dt = Math.min(t - t0, 50); t0 = t;
+  ctx.fillStyle = '#020308'; ctx.fillRect(0, 0, W, H);
+  const cx = W / 2, cy = H / 2;
+  for (const s of stars) {
+    if (warp > 0.01) {
+      const dx = s.x - cx, dy = s.y - cy;
+      s.x += dx * warp * 0.0016 * dt; s.y += dy * warp * 0.0016 * dt;
+      if (s.x < 0 || s.x > W || s.y < 0 || s.y > H) {
+        s.x = cx + (Math.random() - 0.5) * W * 0.5; s.y = cy + (Math.random() - 0.5) * H * 0.5;
+      }
+    } else {
+      s.x -= 0.04 * s.z * dt * devicePixelRatio;
+      if (s.x < 0) { s.x = W; s.y = Math.random() * H; }
+    }
+    s.tw += 0.0025 * dt;
+    ctx.fillStyle = `rgba(210,222,255,${0.3 + 0.5 * s.z + 0.2 * Math.sin(s.tw)})`;
+    const r = (s.z * 1.4 + warp * 0.6) * devicePixelRatio;
+    ctx.fillRect(s.x, s.y, r, r);
+  }
+  warp *= Math.pow(0.994, dt);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- bodies ---------- */
+const BODIES = [
+  ['Sun', 'radial-gradient(circle at 35% 35%, #ffedb0, #e8a33d 60%, #b4601a)', false],
+  ['Mercury', 'radial-gradient(circle at 35% 35%, #cbb9a4, #8c7e6d 65%, #4a4238)', false],
+  ['Venus', 'radial-gradient(circle at 35% 35%, #f0dcb0, #c4a882 65%, #7a6448)', false],
+  ['Earth', 'radial-gradient(circle at 35% 35%, #9cc8ff, #3d6fd6 60%, #1a3a80)', false],
+  ['Moon', 'radial-gradient(circle at 35% 35%, #e0e0e0, #9a9a9a 65%, #555)', false],
+  ['Mars', 'radial-gradient(circle at 35% 35%, #f0946a, #c1440e 65%, #6b2408)', false],
+  ['Ceres', 'radial-gradient(circle at 35% 35%, #c2c2b2, #9a9a8a 65%, #55554a)', false],
+  ['Jupiter', 'linear-gradient(15deg, #a97b42 20%, #d9b380 35%, #b5854e 50%, #e0c298 65%, #a97b42 80%)', false],
+  ['Europa', 'radial-gradient(circle at 35% 35%, #e0d4c0, #b8a890 65%, #6a5f50)', false],
+  ['Saturn', 'radial-gradient(circle at 35% 35%, #f4e6b8, #e8d191 60%, #9a8450)', true],
+  ['Titan', 'radial-gradient(circle at 35% 35%, #f0c860, #d4a030 65%, #7a5a18)', false],
+  ['Uranus', 'radial-gradient(circle at 35% 35%, #b8ecf2, #73c2cb 65%, #3a7a84)', false],
+  ['Neptune', 'radial-gradient(circle at 35% 35%, #8098ff, #3e54e8 65%, #1a2a90)', false],
+  ['Pluto', 'radial-gradient(circle at 35% 35%, #e8dcc0, #c4b28a 65%, #6a5f48)', false],
+];
+
+const dock = document.getElementById('dock');
+let active = null;
+BODIES.forEach(([name, grad, ringed]) => {
+  const b = document.createElement('button');
+  b.className = 'planet';
+  b.innerHTML = `<span class="orb" style="background:${grad};color:#8fd0ff">${ringed ? '<span class="ringed"></span>' : ''}</span><span class="lbl">${name}</span>`;
+  b.onclick = () => {
+    active?.classList.remove('active');
+    b.classList.add('active'); active = b;
+    flyTo(name);
+  };
+  dock.appendChild(b);
+});
+
+/* ---------- travel sim ---------- */
+const near = document.getElementById('near'), distEl = document.getElementById('dist');
+const banner = document.getElementById('banner'), bannerName = document.getElementById('banner-name');
+let target = null, dist = 0, bannerTimer;
+function flyTo(name) {
+  target = name; dist = 2e8 + Math.random() * 5e8;
+  bannerName.textContent = name.toUpperCase();
+  banner.classList.add('show');
+  warp = 1;
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => banner.classList.remove('show'), 3000);
+}
+function fmt(km) {
+  if (km > 1e9) return (km / 1.496e8).toFixed(2) + ' AU';
+  if (km > 1e6) return (km / 1e6).toFixed(1) + 'M km';
+  return Math.round(km).toLocaleString() + ' km';
+}
+setInterval(() => {
+  if (!target) return;
+  dist = Math.max(dist * 0.96, 8e5);
+  near.textContent = target;
+  distEl.textContent = fmt(dist);
+}, 100);
+
+/* ---------- chips & panel ---------- */
+const panel = document.getElementById('panel');
+document.getElementById('gear').onclick = function () {
+  panel.classList.toggle('open'); this.classList.toggle('on');
+};
+document.getElementById('labels').onclick = function () { this.classList.toggle('on'); };
+document.getElementById('tour').onclick = () => flyTo('Sun');
+document.getElementById('top').onclick = () => { warp = 1.4; };
+
+const spd = document.getElementById('spd');
+[['vol', 'vol-out'], ['bloom', 'bloom-out'], ['speed', 'speed-out']].forEach(([id, out]) => {
+  const el = document.getElementById(id), o = document.getElementById(out);
+  el.oninput = () => {
+    o.textContent = el.value;
+    if (id === 'speed') {
+      const s = 0.01 * Math.pow(500 / 0.01, el.value / 100);
+      spd.textContent = s > 2 ? (s * 0.4).toFixed(1) + ' AU/min' : (s * 1000).toFixed(0) + 'k km/s';
+    }
+  };
+});
+
+/* ---------- start ---------- */
+document.getElementById('start').onclick = function () {
+  this.classList.add('gone'); warp = 2;
+};
+</script>
+</body>
+</html>

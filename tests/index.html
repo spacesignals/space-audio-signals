@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>spacesignals — UI Redesign Gallery</title>
+<style>
+  :root {
+    --bg: #05060d;
+    --text: rgba(238, 240, 248, 0.92);
+    --dim: rgba(238, 240, 248, 0.5);
+    --border: rgba(255, 255, 255, 0.08);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Inter", system-ui, sans-serif;
+    min-height: 100vh; padding: 48px 32px 80px;
+  }
+  h1 { font-weight: 300; letter-spacing: 6px; font-size: 22px; text-align: center; }
+  .sub { text-align: center; color: var(--dim); font-size: 12px; letter-spacing: 2px; margin: 10px 0 48px; }
+  .grid {
+    display: grid; gap: 24px; max-width: 1500px; margin: 0 auto;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  }
+  .card {
+    border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+    background: #0a0c16; text-decoration: none; color: inherit;
+    transition: transform 0.3s cubic-bezier(0.22,1,0.36,1), border-color 0.3s;
+    display: block;
+  }
+  .card:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.2); }
+  .card iframe {
+    width: 200%; height: 480px; border: none; display: block;
+    transform: scale(0.5); transform-origin: top left; pointer-events: none;
+  }
+  .card .frame-clip { height: 240px; overflow: hidden; }
+  .card .info { padding: 16px 20px 18px; border-top: 1px solid var(--border); }
+  .card .info h3 { font-size: 14px; font-weight: 600; letter-spacing: 1px; }
+  .card .info h3 span { color: var(--dim); font-weight: 400; margin-right: 8px; }
+  .card .info p { font-size: 12px; color: var(--dim); margin-top: 6px; line-height: 1.55; }
+</style>
+</head>
+<body>
+<h1>SPACESIGNALS — UI REDESIGNS</h1>
+<div class="sub">five directions · click any card to open it full-screen · interfaces are fully interactive</div>
+<div class="grid">
+  <a class="card" href="1-minimal-glass/index.html">
+    <div class="frame-clip"><iframe src="1-minimal-glass/index.html" loading="lazy" tabindex="-1"></iframe></div>
+    <div class="info"><h3><span>01</span>MINIMAL GLASS</h3>
+      <p>Frosted-glass pill bar, hover-expanding planet rail on the right edge, whole UI fades away after 4s idle. The quietest evolution of the current HUD.</p>
+    </div>
+  </a>
+  <a class="card" href="2-orbital-dock/index.html">
+    <div class="frame-clip"><iframe src="2-orbital-dock/index.html" loading="lazy" tabindex="-1"></iframe></div>
+    <div class="info"><h3><span>02</span>ORBITAL DOCK</h3>
+      <p>macOS-style dock of 3D-shaded planet orbs that magnify on hover, warp-speed starfield on travel, top telemetry strip, slide-in settings panel.</p>
+    </div>
+  </a>
+  <a class="card" href="3-mission-console/index.html">
+    <div class="frame-clip"><iframe src="3-mission-console/index.html" loading="lazy" tabindex="-1"></iframe></div>
+    <div class="info"><h3><span>03</span>MISSION CONSOLE</h3>
+      <p>Monospace flight-deck: corner-bracket panels, body registry with live ranges + audibility blips, throttle slider, boot sequence, command log.</p>
+    </div>
+  </a>
+  <a class="card" href="4-zen-drift/index.html">
+    <div class="frame-clip"><iframe src="4-zen-drift/index.html" loading="lazy" tabindex="-1"></iframe></div>
+    <div class="info"><h3><span>04</span>ZEN DRIFT</h3>
+      <p>Meditation-first, nearly chromeless. One breathing orb opens a radial constellation of worlds; serif typography; distance becomes poetry on arrival.</p>
+    </div>
+  </a>
+  <a class="card" href="5-spectrum-flow/index.html">
+    <div class="frame-clip"><iframe src="5-spectrum-flow/index.html" loading="lazy" tabindex="-1"></iframe></div>
+    <div class="info"><h3><span>05</span>SPECTRUM FLOW</h3>
+      <p>Audio-first: live 7-stem mixer with mutable channels, planet chips with proximity progress rings, aurora gradient accents, now-playing card.</p>
+    </div>
+  </a>
+</div>
+</body>
+</html>

@@ -23,6 +23,12 @@ const AU_TO_KM = 149_597_870.7;
 const J2000_MS = Date.UTC(2000, 0, 1, 12, 0, 0);
 const MS_PER_DAY = 86_400_000;
 
+// moonId -> parent bodyId, derived once from BODIES config
+const PARENT_MAP: Record<string, string> = {};
+for (const body of BODIES) {
+  if (body.parentId) PARENT_MAP[body.id] = body.parentId;
+}
+
 /**
  * Ephemeris computes real-time positions of solar system bodies
  * using the astronomy-engine library (client-side, no server needed).
@@ -88,16 +94,10 @@ export class Ephemeris {
     // Phase 2: compute other moons as circular orbits around their parent
     const daysSinceJ2000 = (date.getTime() - J2000_MS) / MS_PER_DAY;
 
-    // Build parent map from BODIES config
-    const parentMap: Record<string, string> = {};
-    for (const body of BODIES) {
-      if (body.parentId) parentMap[body.id] = body.parentId;
-    }
-
     for (const [moonId, orbit] of Object.entries(MOON_ORBITS)) {
       if (moonId === 'moon') continue; // handled above via astronomy-engine
 
-      const parentId = parentMap[moonId];
+      const parentId = PARENT_MAP[moonId];
       const parentPos = parentId ? this.positions.get(parentId) : undefined;
       if (!parentPos) continue;
 

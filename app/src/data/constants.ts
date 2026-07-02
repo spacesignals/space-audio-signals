@@ -23,7 +23,6 @@ export const FREE_FLIGHT_SPEED = 37.4; // units/second (~15 AU/min)
 export const FREE_FLIGHT_SPEED_MIN = 0.01;
 export const FREE_FLIGHT_SPEED_MAX = 500; // ~200 AU/min
 export const FOCUS_TRAVEL_DURATION_MS = 10_000; // 10 seconds
-export const JOURNEY_WAYPOINT_DURATION_MS = 30_000; // 30 seconds per waypoint
 
 // Camera drift for zero-gravity feel
 export const CAMERA_DRIFT_AMPLITUDE = 0.0002;
@@ -37,14 +36,7 @@ export const CROSSFADE_TIME_CONSTANT = 0.8; // seconds — exponential approach 
 export const DRONE_CROSSFADE_TIME_CONSTANT = 1.5; // seconds — slower crossfade for deep space drone
 export const STEM_RETRY_COOLDOWN_MS = 60_000; // wait 60s before retrying a failed stem
 export const STEM_MAX_RETRIES = 1; // retry once after cooldown, then permanently fail
-
-// Performance budgets
-export const MAX_RENDERED_BODIES = 50; // max bodies with visible meshes
-export const MAX_LOADED_TEXTURES = 20; // max textures in GPU memory
-export const MAX_DECODED_AUDIO = 15; // max decoded audio buffers in memory
-export const TARGET_FRAME_TIME_MS = 16.7; // 60fps target
 export const STEM_EVICTION_DELAY_MS = 30_000; // evict silent stems after 30s
 
 // Starfield
-export const STARFIELD_COUNT = 15_000;
 export const STARFIELD_RADIUS = 50_000; // units

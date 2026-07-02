@@ -12,7 +12,6 @@ import { getProceduralTexture, generateSkyboxTexture } from './ProceduralTexture
 interface BodyMesh {
   config: CelestialBodyConfig;
   mesh: THREE.Mesh;
-  atmosphere?: THREE.Mesh;
   rings?: THREE.Mesh;
   label?: THREE.Sprite;
 }
@@ -25,7 +24,6 @@ export class SolarSystem {
   private bodyMeshes: Map<string, BodyMesh> = new Map();
   private textureLoader = new THREE.TextureLoader();
   private sunLight: THREE.PointLight;
-  private earthMaterial: THREE.ShaderMaterial | null = null;
   private _labelWorldPos = new THREE.Vector3(); // reusable for updateLabels
 
   constructor(scene: THREE.Scene) {
@@ -85,7 +83,7 @@ export class SolarSystem {
         }
       } else if (config.id === 'earth') {
         // Earth: custom day/night shader (always loads real textures)
-        material = this.createEarthMaterial(null);
+        material = this.createEarthMaterial();
       } else {
         // Planets/moons: emissive tint so they're visible far from the Sun
         const color = new THREE.Color(config.color || '#888888');
@@ -130,9 +128,6 @@ export class SolarSystem {
       this.scene.add(mesh);
 
       const bodyMesh: BodyMesh = { config, mesh };
-
-      // Atmosphere glow disabled — bloom handles the glow effect
-      bodyMesh.atmosphere = undefined;
 
       // Rings (Saturn, Uranus, Neptune)
       if (config.hasRings && config.ringInnerRadiusKm && config.ringOuterRadiusKm) {
@@ -191,10 +186,6 @@ export class SolarSystem {
       if (body) {
         body.mesh.position.set(pos[0], pos[1], pos[2]);
       }
-    }
-    // Update Earth day/night shader with sun position (always at origin)
-    if (this.earthMaterial) {
-      this.earthMaterial.uniforms.sunDirection.value.set(0, 0, 0);
     }
   }
 
@@ -282,15 +273,13 @@ export class SolarSystem {
     return sprite;
   }
 
-  private createEarthMaterial(proceduralTex: THREE.CanvasTexture | null): THREE.ShaderMaterial {
-    const dayTex = proceduralTex || new THREE.Texture();
-    const nightTex = new THREE.Texture();
-
+  private createEarthMaterial(): THREE.ShaderMaterial {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
-        dayMap: { value: dayTex },
-        nightMap: { value: nightTex },
-        sunDirection: { value: new THREE.Vector3(1, 0, 0) },
+        dayMap: { value: new THREE.Texture() },
+        nightMap: { value: new THREE.Texture() },
+        // Sun sits at the origin; shader computes per-fragment direction from this
+        sunDirection: { value: new THREE.Vector3(0, 0, 0) },
       },
       vertexShader: `
         varying vec2 vUv;
@@ -339,7 +328,6 @@ export class SolarSystem {
       mat.uniforms.nightMap.value = texture;
     });
 
-    this.earthMaterial = mat;
     return mat;
   }
 

@@ -8,6 +8,16 @@ import {
   CAMERA_DRIFT_FREQUENCY,
 } from '../data/constants';
 
+/** Smoothstep easing: zero 1st derivative at both ends. */
+function smoothstep01(t: number): number {
+  return t * t * (3 - 2 * t);
+}
+
+/** Quadratic ease-in-out — starts faster than cubic, avoids perceived hover. */
+function easeInOutQuad(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
 /**
  * Navigation handles camera movement in all modes:
  * - Free flight (WASD + mouse)
@@ -91,6 +101,11 @@ export class Navigation {
   private tourOrbitDuration = 0;
   private tourTravelDuration = 2000;
   private tourOrbitDurationPerBody = 4500;
+  // Tour orbit elliptical params (randomized per body)
+  private tourEllipticityX = 1.0;
+  private tourEllipticityY = 0.3;
+  private tourTiltX = 0;
+  private tourTiltZ = 0;
   private tourPrevOrbitQuat = new THREE.Quaternion(); // for seamless orbit→travel blend
   private tourOrbitStartPos = new THREE.Vector3(); // camera pos when orbit begins
   private onTourComplete: (() => void) | null = null;
@@ -133,6 +148,24 @@ export class Navigation {
     this.setupTouch(canvas);
   }
 
+  /**
+   * Switch to free-flight, syncing yaw/pitch to the camera's current
+   * orientation so there's no snap. Safe to call from any mode.
+   */
+  private enterFreeFlight(): void {
+    this.mode = 'free-flight';
+    const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
+    this.yaw = euler.y;
+    this.pitch = euler.x;
+  }
+
+  /** User input interrupts any automated camera mode. */
+  private interruptAutopilot(): void {
+    if (this.mode !== 'free-flight') {
+      this.enterFreeFlight();
+    }
+  }
+
   private setupKeyboard(): void {
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.key.toLowerCase());
@@ -146,14 +179,7 @@ export class Navigation {
       }
 
       // Any key stops tour, travel, orbit, or departure flyby
-      if (this.mode === 'smooth-journey') {
-        this.stopTour();
-      } else if (this.mode === 'focus-travel' || this.mode === 'top-view-travel' || this.mode === 'orbit-settle' || this.mode === 'orbit-idle' || this.mode === 'departure-flyby') {
-        this.mode = 'free-flight';
-        const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
-        this.yaw = euler.y;
-        this.pitch = euler.x;
-      }
+      this.interruptAutopilot();
     });
 
     window.addEventListener('keyup', (e) => {
@@ -163,14 +189,7 @@ export class Navigation {
 
   private setupMouse(canvas: HTMLCanvasElement): void {
     canvas.addEventListener('mousedown', (e) => {
-      if (this.mode === 'smooth-journey') {
-        this.stopTour();
-      } else if (this.mode === 'focus-travel' || this.mode === 'top-view-travel' || this.mode === 'orbit-settle' || this.mode === 'orbit-idle' || this.mode === 'departure-flyby') {
-        this.mode = 'free-flight';
-        const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
-        this.yaw = euler.y;
-        this.pitch = euler.x;
-      }
+      this.interruptAutopilot();
       this.mouseDown = true;
       this.lastMouseX = e.clientX;
       this.lastMouseY = e.clientY;
@@ -347,10 +366,54 @@ export class Navigation {
   }
 
   /**
-   * Cubic Bezier evaluation: planet swells (~5x apparent size at close pass).
-   * Camera looks along Bezier tangent (instantaneous travel direction) — the planet
-   * sweeps past in the side view rather than being tracked. After close pass, slerps
-   * toward look-at-destination so the orientation settles onto the travel trajectory.
+   * Advance the camera along a cubic Bezier close-pass arc.
+   * Position: B(t) = (1-t)³P0 + 3(1-t)²t·P1 + 3(1-t)t²·P2 + t³·P3.
+   * Orientation: looks along the Bezier tangent B'(t) (instantaneous travel
+   * direction) so the planet sweeps past in the side view rather than being
+   * tracked. After the close pass (t > 0.5), slerps toward looking at
+   * settleTarget so the orientation settles onto the travel trajectory.
+   */
+  private followBezierArc(
+    p0: THREE.Vector3,
+    p1: THREE.Vector3,
+    p2: THREE.Vector3,
+    p3: THREE.Vector3,
+    t: number,
+    settleTarget: THREE.Vector3 | null
+  ): void {
+    const om = 1 - t;
+    const b0 = om * om * om;
+    const b1 = 3 * om * om * t;
+    const b2 = 3 * om * t * t;
+    const b3 = t * t * t;
+    this.camera.position.set(
+      b0 * p0.x + b1 * p1.x + b2 * p2.x + b3 * p3.x,
+      b0 * p0.y + b1 * p1.y + b2 * p2.y + b3 * p3.y,
+      b0 * p0.z + b1 * p1.z + b2 * p2.z + b3 * p3.z
+    );
+
+    // Tangent: B'(t) ∝ (1-t)²·v01 + 2(1-t)t·v12 + t²·v23
+    const c0 = om * om;
+    const c1 = 2 * om * t;
+    const c2 = t * t;
+    const tx = c0 * (p1.x - p0.x) + c1 * (p2.x - p1.x) + c2 * (p3.x - p2.x);
+    const ty = c0 * (p1.y - p0.y) + c1 * (p2.y - p1.y) + c2 * (p3.y - p2.y);
+    const tz = c0 * (p1.z - p0.z) + c1 * (p2.z - p1.z) + c2 * (p3.z - p2.z);
+    this._tangentLookTarget.set(this.camera.position.x + tx, this.camera.position.y + ty, this.camera.position.z + tz);
+    this._tangentQuat.copy(this.computeLookAtQuat(this.camera.position, this._tangentLookTarget));
+
+    if (t < 0.5 || !settleTarget) {
+      this.camera.quaternion.copy(this._tangentQuat);
+    } else {
+      const sb = smoothstep01((t - 0.5) / 0.5);
+      const destQuat = this.computeLookAtQuat(this.camera.position, settleTarget);
+      this.camera.quaternion.slerpQuaternions(this._tangentQuat, destQuat, sb);
+    }
+  }
+
+  /**
+   * Departure flyby: planet swells (~5x apparent size at close pass) as the
+   * camera arcs past it toward the next destination.
    */
   private updateDepartureFlyby(): void {
     if (!this.departureBody || !this.pendingTarget) return;
@@ -358,37 +421,10 @@ export class Navigation {
     const elapsed = performance.now() - this.departureStartTime;
     const t = Math.min(elapsed / this.departureDuration, 1);
 
-    // Cubic Bezier: B(t) = (1-t)³P0 + 3(1-t)²t·P1 + 3(1-t)t²·P2 + t³·P3
-    const om = 1 - t;
-    const b0 = om * om * om;
-    const b1 = 3 * om * om * t;
-    const b2 = 3 * om * t * t;
-    const b3 = t * t * t;
-    this.camera.position.set(
-      b0 * this.departureP0.x + b1 * this.departureP1.x + b2 * this.departureP2.x + b3 * this.departureP3.x,
-      b0 * this.departureP0.y + b1 * this.departureP1.y + b2 * this.departureP2.y + b3 * this.departureP3.y,
-      b0 * this.departureP0.z + b1 * this.departureP1.z + b2 * this.departureP2.z + b3 * this.departureP3.z
+    this.followBezierArc(
+      this.departureP0, this.departureP1, this.departureP2, this.departureP3,
+      t, this.pendingTarget
     );
-
-    // Camera looks along Bezier tangent: B'(t) = 3[(1-t)²·v01 + 2(1-t)t·v12 + t²·v23]
-    const c0 = om * om;
-    const c1 = 2 * om * t;
-    const c2 = t * t;
-    const tx = c0 * (this.departureP1.x - this.departureP0.x) + c1 * (this.departureP2.x - this.departureP1.x) + c2 * (this.departureP3.x - this.departureP2.x);
-    const ty = c0 * (this.departureP1.y - this.departureP0.y) + c1 * (this.departureP2.y - this.departureP1.y) + c2 * (this.departureP3.y - this.departureP2.y);
-    const tz = c0 * (this.departureP1.z - this.departureP0.z) + c1 * (this.departureP2.z - this.departureP1.z) + c2 * (this.departureP3.z - this.departureP2.z);
-    this._tangentLookTarget.set(this.camera.position.x + tx, this.camera.position.y + ty, this.camera.position.z + tz);
-    this._tangentQuat.copy(this.computeLookAtQuat(this.camera.position, this._tangentLookTarget));
-
-    // After close pass (t > 0.5), slowly settle onto look-at-destination.
-    if (t < 0.5) {
-      this.camera.quaternion.copy(this._tangentQuat);
-    } else {
-      const settleT = (t - 0.5) / 0.5;
-      const sb = settleT * settleT * (3 - 2 * settleT);
-      const destQuat = this.computeLookAtQuat(this.camera.position, this.pendingTarget);
-      this.camera.quaternion.slerpQuaternions(this._tangentQuat, destQuat, sb);
-    }
 
     // Cut at t=0.65 — planet has left view, start travel toward destination
     if (t >= 0.65) {
@@ -415,10 +451,7 @@ export class Navigation {
     if (!this.travelStart || !this.travelEnd) return;
 
     const elapsed = performance.now() - this.travelStartTime;
-    let t = Math.min(elapsed / this.travelDuration, 1);
-
-    // Quadratic ease-in-out — starts faster than cubic, avoids perceived hover
-    t = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    const t = easeInOutQuad(Math.min(elapsed / this.travelDuration, 1));
 
     // Interpolate position
     this.camera.position.lerpVectors(this.travelStart, this.travelEnd, t);
@@ -446,10 +479,7 @@ export class Navigation {
         const dz = this.camera.position.z - this.orbitTarget.z;
         this.orbitStartAngle = Math.atan2(dz, dx);
       } else {
-        this.mode = 'free-flight';
-        const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
-        this.yaw = euler.y;
-        this.pitch = euler.x;
+        this.enterFreeFlight();
       }
     }
   }
@@ -564,8 +594,7 @@ export class Navigation {
 
     // Blend toward settle position in last 20%
     if (t > 0.8) {
-      const blend = (t - 0.8) / 0.2;
-      const sb = blend * blend * (3 - 2 * blend);
+      const sb = smoothstep01((t - 0.8) / 0.2);
       px += (this.orbitSettlePos.x - px) * sb;
       py += (this.orbitSettlePos.y - py) * sb;
       pz += (this.orbitSettlePos.z - pz) * sb;
@@ -577,8 +606,7 @@ export class Navigation {
     // Use a long blend (25%) so the transition is imperceptible
     const lookAtQuat = this.computeLookAtQuat(this.camera.position, this.orbitTarget);
     if (t < 0.25) {
-      const blend = t / 0.25;
-      const sb = blend * blend * (3 - 2 * blend);
+      const sb = smoothstep01(t / 0.25);
       this.camera.quaternion.slerpQuaternions(this.orbitStartQuat, lookAtQuat, sb);
     } else {
       this.camera.quaternion.copy(lookAtQuat);
@@ -624,8 +652,7 @@ export class Navigation {
     // Blend from actual start position over first 15% of first revolution
     const blendT = elapsed / this.orbitIdleDuration;
     if (blendT < 0.15) {
-      const sb = (blendT / 0.15);
-      const smooth = sb * sb * (3 - 2 * sb);
+      const smooth = smoothstep01(blendT / 0.15);
       px = this.orbitIdleStartPos.x + (px - this.orbitIdleStartPos.x) * smooth;
       py = this.orbitIdleStartPos.y + (py - this.orbitIdleStartPos.y) * smooth;
       pz = this.orbitIdleStartPos.z + (pz - this.orbitIdleStartPos.z) * smooth;
@@ -685,10 +712,7 @@ export class Navigation {
 
   stopTour(): void {
     if (this.mode === 'smooth-journey') {
-      this.mode = 'free-flight';
-      const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
-      this.yaw = euler.y;
-      this.pitch = euler.x;
+      this.enterFreeFlight();
     }
   }
 
@@ -721,12 +745,6 @@ export class Navigation {
 
     this.tourPhase = 'travel';
   }
-
-  // Tour orbit elliptical params (randomized per body)
-  private tourEllipticityX = 1.0;
-  private tourEllipticityY = 0.3;
-  private tourTiltX = 0;
-  private tourTiltZ = 0;
 
   private startTourOrbit(): void {
     const wp = this.tourWaypoints[this.tourIndex];
@@ -815,15 +833,14 @@ export class Navigation {
 
       const elapsed = performance.now() - this.travelStartTime;
       const rawT = Math.min(elapsed / this.travelDuration, 1);
-      let t = rawT < 0.5 ? 2 * rawT * rawT : 1 - Math.pow(-2 * rawT + 2, 2) / 2;
+      const t = easeInOutQuad(rawT);
 
       // Smooth position interpolation
       this.camera.position.lerpVectors(this.travelStart, this.travelEnd, t);
 
       // Fast orientation snap: pan completes in first 20% of travel time (~600ms at default 3s)
       // This prevents Venus appearing to travel backwards while the camera slowly turns mid-flight
-      const panT = Math.min(rawT / 0.20, 1);
-      const panEased = panT < 0.5 ? 2 * panT * panT : 1 - Math.pow(-2 * panT + 2, 2) / 2;
+      const panEased = easeInOutQuad(Math.min(rawT / 0.20, 1));
       const endQuat = this.computeLookAtQuat(this.camera.position, this.travelLookTarget);
       this.camera.quaternion.slerpQuaternions(this.travelStartQuat, endQuat, panEased);
 
@@ -834,49 +851,22 @@ export class Navigation {
       const elapsed = performance.now() - this.tourDepartureStartTime;
       const t = Math.min(elapsed / this.tourDepartureDuration, 1);
 
-      // Cubic Bezier — same form as click-flyby
-      const om = 1 - t;
-      const b0 = om * om * om;
-      const b1 = 3 * om * om * t;
-      const b2 = 3 * om * t * t;
-      const b3 = t * t * t;
-      this.camera.position.set(
-        b0 * this.tourDepartureP0.x + b1 * this.tourDepartureP1.x + b2 * this.tourDepartureP2.x + b3 * this.tourDepartureP3.x,
-        b0 * this.tourDepartureP0.y + b1 * this.tourDepartureP1.y + b2 * this.tourDepartureP2.y + b3 * this.tourDepartureP3.y,
-        b0 * this.tourDepartureP0.z + b1 * this.tourDepartureP1.z + b2 * this.tourDepartureP2.z + b3 * this.tourDepartureP3.z
-      );
-
+      // Same close-pass arc as click-flyby; settle toward the next body (if any)
       const nextWp = this.tourWaypoints[this.tourIndex + 1];
-
-      // Camera looks along Bezier tangent (forward through arc)
-      const c0 = om * om;
-      const c1 = 2 * om * t;
-      const c2 = t * t;
-      const tx = c0 * (this.tourDepartureP1.x - this.tourDepartureP0.x) + c1 * (this.tourDepartureP2.x - this.tourDepartureP1.x) + c2 * (this.tourDepartureP3.x - this.tourDepartureP2.x);
-      const ty = c0 * (this.tourDepartureP1.y - this.tourDepartureP0.y) + c1 * (this.tourDepartureP2.y - this.tourDepartureP1.y) + c2 * (this.tourDepartureP3.y - this.tourDepartureP2.y);
-      const tz = c0 * (this.tourDepartureP1.z - this.tourDepartureP0.z) + c1 * (this.tourDepartureP2.z - this.tourDepartureP1.z) + c2 * (this.tourDepartureP3.z - this.tourDepartureP2.z);
-      this._tangentLookTarget.set(this.camera.position.x + tx, this.camera.position.y + ty, this.camera.position.z + tz);
-      this._tangentQuat.copy(this.computeLookAtQuat(this.camera.position, this._tangentLookTarget));
-
-      if (t < 0.5 || !nextWp) {
-        this.camera.quaternion.copy(this._tangentQuat);
-      } else {
-        const settleT = (t - 0.5) / 0.5;
-        const sb = settleT * settleT * (3 - 2 * settleT);
-        const nextPos = this.getBodyPosition?.(nextWp.bodyId) || nextWp.position;
-        const destQuat = this.computeLookAtQuat(this.camera.position, nextPos);
-        this.camera.quaternion.slerpQuaternions(this._tangentQuat, destQuat, sb);
-      }
+      const settleTarget = nextWp
+        ? this.getBodyPosition?.(nextWp.bodyId) || nextWp.position
+        : null;
+      this.followBezierArc(
+        this.tourDepartureP0, this.tourDepartureP1, this.tourDepartureP2, this.tourDepartureP3,
+        t, settleTarget
+      );
 
       if (t >= 1) {
         this.tourPrevOrbitQuat.copy(this.camera.quaternion);
         this.travelStartQuat.copy(this.camera.quaternion);
         this.tourIndex++;
         if (this.tourIndex >= this.tourWaypoints.length) {
-          this.mode = 'free-flight';
-          const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
-          this.yaw = euler.y;
-          this.pitch = euler.x;
+          this.enterFreeFlight();
           this.onTourComplete?.();
         } else {
           this.startTourTravel();
@@ -895,8 +885,7 @@ export class Navigation {
       const t = Math.min(elapsed / this.tourOrbitDuration, 1);
 
       // Full orbit (2π) with smoothstep easing for seamless start/end
-      const eased = t * t * (3 - 2 * t);
-      const angle = eased * Math.PI * 2;
+      const angle = smoothstep01(t) * Math.PI * 2;
 
       // Displacement-from-start orbit: at t=0 displacement is zero (no jump)
       const r = this.tourOrbitRadius;
@@ -919,8 +908,7 @@ export class Navigation {
 
       // Blend orientation from travel-end into orbit lookAt over first 15%
       if (t < 0.15) {
-        const blend = t / 0.15;
-        const smoothBlend = blend * blend * (3 - 2 * blend);
+        const smoothBlend = smoothstep01(t / 0.15);
         this.camera.quaternion.slerpQuaternions(this.tourPrevOrbitQuat, targetQuat, smoothBlend);
       } else {
         this.camera.quaternion.copy(targetQuat);
@@ -932,10 +920,6 @@ export class Navigation {
         this.startTourDeparture();
       }
     }
-  }
-
-  getMode(): string {
-    return this.mode;
   }
 
   getSpeed(): number {
@@ -965,12 +949,6 @@ export class Navigation {
       this.camera.position.sub(this.driftOffset);
       this.driftApplied = false;
     }
-  }
-
-  getCameraPositionKm(): [number, number, number] {
-    const p = this.camera.position;
-    const KM = 1e6;
-    return [p.x * KM, p.y * KM, p.z * KM];
   }
 
   /** Returns the clean (non-drifted) camera position in Three.js units. */

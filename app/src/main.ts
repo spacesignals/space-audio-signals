@@ -46,6 +46,7 @@ class App {
   private running = false;
   private _audioFwd = new THREE.Vector3();
   private _audioUp = new THREE.Vector3();
+  private lastHudUpdate = 0;
 
   private constructor() {
     // Renderer
@@ -119,67 +120,46 @@ class App {
   }
 
   private setup(): void {
-
-    // HUD callbacks
-    this.hud.setOnBodySelect((bodyId) => {
-      const pos = this.solarSystem.getBodyPosition(bodyId);
-      if (pos) {
-        const visualRadius = this.solarSystem.getBodyVisualRadius(bodyId) ?? undefined;
-        this.navigation.flyTo(pos, visualRadius);
-        const body = BODIES.find(b => b.id === bodyId);
-        if (body) this.hud.showBodyInfo(body);
-      }
-    });
-
-    this.hud.setOnStart(() => {
-      this.audioEngine.init();
-      this.running = true;
-    });
-
     // Tour: Sun -> planets in order (skip moons/dwarf planets for tour)
     const tourOrder = ['sun', 'mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'pluto'];
-    this.hud.setOnTour(() => {
-      const waypoints = tourOrder.map(id => {
-        const pos = this.solarSystem.getBodyPosition(id) || new THREE.Vector3();
-        const visualRadius = this.solarSystem.getBodyVisualRadius(id) || 0.1;
-        return { bodyId: id, position: pos, visualRadius };
-      });
-      this.navigation.startTour(
-        waypoints,
-        (id) => this.solarSystem.getBodyPosition(id),
-      );
-    });
-
-    // Top view
-    this.hud.setOnTopView(() => {
-      this.navigation.flyToTopView();
-    });
-
-    // Label toggle
-    this.hud.setOnToggleLabels((visible) => {
-      this.solarSystem.setLabelsVisible(visible);
-    });
-
-    // Debug toggle
-    this.hud.setOnToggleDebug(() => {
-      this.perfMonitor.toggle();
-    });
-
-    // Settings: volume + bloom
-    this.hud.setOnVolumeChange((volume) => {
-      this.audioEngine.setMasterVolume(volume);
-    });
-    this.hud.setOnBloomStrengthChange((strength) => {
-      this.postProcessing.setBloomStrength(strength);
-    });
-    this.hud.setOnSpeedChange((speed) => {
-      this.navigation.setSpeed(speed);
-    });
 
     // Background audio toggle (default: enabled — audio continues when tab hidden)
     let backgroundAudioEnabled = true;
-    this.hud.setOnToggleBackgroundAudio((enabled) => {
-      backgroundAudioEnabled = enabled;
+
+    this.hud.setCallbacks({
+      onBodySelect: (bodyId) => {
+        const pos = this.solarSystem.getBodyPosition(bodyId);
+        if (pos) {
+          const visualRadius = this.solarSystem.getBodyVisualRadius(bodyId) ?? undefined;
+          this.navigation.flyTo(pos, visualRadius);
+          const body = BODIES.find(b => b.id === bodyId);
+          if (body) this.hud.showBodyInfo(body);
+        }
+      },
+      onStart: () => {
+        this.audioEngine.init();
+        this.running = true;
+      },
+      onTour: () => {
+        const waypoints = tourOrder.map(id => {
+          const pos = this.solarSystem.getBodyPosition(id) || new THREE.Vector3();
+          const visualRadius = this.solarSystem.getBodyVisualRadius(id) || 0.1;
+          return { bodyId: id, position: pos, visualRadius };
+        });
+        this.navigation.startTour(
+          waypoints,
+          (id) => this.solarSystem.getBodyPosition(id),
+        );
+      },
+      onTopView: () => this.navigation.flyToTopView(),
+      onToggleLabels: (visible) => this.solarSystem.setLabelsVisible(visible),
+      onToggleDebug: () => this.perfMonitor.toggle(),
+      onVolumeChange: (volume) => this.audioEngine.setMasterVolume(volume),
+      onBloomStrengthChange: (strength) => this.postProcessing.setBloomStrength(strength),
+      onSpeedChange: (speed) => this.navigation.setSpeed(speed),
+      onToggleBackgroundAudio: (enabled) => {
+        backgroundAudioEnabled = enabled;
+      },
     });
     document.addEventListener('visibilitychange', () => {
       if (!this.running) return;
@@ -235,8 +215,11 @@ class App {
       this.audioEngine.update(distances);
     }
 
-    // Update HUD from pre-computed distances
-    this.updateHUD(distances);
+    // Update HUD from pre-computed distances (10Hz — text readouts don't need 60fps)
+    if (now - this.lastHudUpdate > 100) {
+      this.lastHudUpdate = now;
+      this.updateHUD(distances);
+    }
 
     // Apply drift offset for visual rendering only
     this.navigation.applyDrift();
@@ -276,13 +259,11 @@ class App {
 
   private updateHUD(distances: BodyDistance[]): void {
     const nearest = distances[0];
-    const nearestName = nearest
-      ? BODIES.find(b => b.id === nearest.bodyId)?.name || nearest.bodyId
-      : null;
-    const nearestDistKm = nearest ? nearest.distanceKm : Infinity;
-
-    this.hud.updateDistance(nearestName, nearestDistKm);
-    this.hud.updateSpeed(this.navigation.getSpeed());
+    this.hud.updateTelemetry(
+      nearest ? nearest.config.name : null,
+      nearest ? nearest.distanceKm : Infinity,
+      this.navigation.getSpeed()
+    );
   }
 
   private onResize(): void {

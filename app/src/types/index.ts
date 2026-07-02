@@ -42,24 +42,3 @@ export interface BodyDistance {
   distanceKm: number;
   config: CelestialBodyConfig;
 }
-
-export interface NavigationMode {
-  type: 'free-flight' | 'smooth-journey' | 'focus-travel';
-}
-
-export interface HUDSettings {
-  showLabels: boolean;
-  showDistance: boolean;
-  showMiniMap: boolean;
-  showInfoPanel: boolean;
-  showAudioViz: boolean;
-}
-
-export interface AppState {
-  navigationMode: NavigationMode;
-  hudSettings: HUDSettings;
-  selectedBody: string | null;
-  cameraPositionKm: [number, number, number];
-  timeScale: number; // 1.0 = realtime
-  paused: boolean;
-}

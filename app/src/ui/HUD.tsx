@@ -490,13 +490,9 @@ export class HUD {
     );
   }
 
-  updateDistance(nearestBody: string | null, distanceKm: number): void {
-    hudState = { ...hudState, nearestBody, distanceKm };
-    rerenderHUD?.();
-  }
-
-  updateSpeed(speedUnitsPerSec: number): void {
-    hudState = { ...hudState, speedUnitsPerSec };
+  /** Update distance readout and speed display in a single re-render. */
+  updateTelemetry(nearestBody: string | null, distanceKm: number, speedUnitsPerSec: number): void {
+    hudState = { ...hudState, nearestBody, distanceKm, speedUnitsPerSec };
     rerenderHUD?.();
   }
 
@@ -505,52 +501,7 @@ export class HUD {
     rerenderHUD?.();
   }
 
-  hideBodyInfo(): void {
-    hudState = { ...hudState, selectedBody: null };
-    rerenderHUD?.();
-  }
-
-  setOnBodySelect(cb: (bodyId: string) => void): void {
-    this.callbacks.onBodySelect = cb;
-  }
-
-  setOnStart(cb: () => void): void {
-    this.callbacks.onStart = cb;
-  }
-
-  setOnTour(cb: () => void): void {
-    this.callbacks.onTour = cb;
-  }
-
-  setOnTopView(cb: () => void): void {
-    this.callbacks.onTopView = cb;
-  }
-
-  setOnToggleLabels(cb: (visible: boolean) => void): void {
-    this.callbacks.onToggleLabels = cb;
-  }
-
-  setOnToggleDebug(cb: () => void): void {
-    this.callbacks.onToggleDebug = cb;
-  }
-
-  setOnToggleBackgroundAudio(cb: (enabled: boolean) => void): void {
-    this.callbacks.onToggleBackgroundAudio = cb;
-  }
-
-  setOnVolumeChange(cb: (volume: number) => void): void {
-    this.callbacks.onVolumeChange = cb;
-  }
-
-  setOnBloomStrengthChange(cb: (strength: number) => void): void {
-    this.callbacks.onBloomStrengthChange = cb;
-  }
-
-  setOnSpeedChange(cb: (speed: number) => void): void {
-    this.callbacks.onSpeedChange = cb;
-  }
-
-  setVisible(visible: boolean): void {
-    this.mountEl.style.display = visible ? 'block' : 'none';
+  setCallbacks(callbacks: Partial<HUDCallbacks>): void {
+    Object.assign(this.callbacks, callbacks);
   }
 }

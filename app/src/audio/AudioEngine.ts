@@ -7,6 +7,7 @@ import {
   DRONE_CROSSFADE_TIME_CONSTANT,
   STEM_RETRY_COOLDOWN_MS,
   STEM_MAX_RETRIES,
+  STEM_EVICTION_DELAY_MS,
 } from '../data/constants';
 
 /**
@@ -35,15 +36,11 @@ export class AudioEngine {
   // Last gain target per stem — skip rescheduling when target hasn't changed meaningfully
   private scheduledGains: Map<string, number> = new Map();
 
-  constructor() {}
-
-
   /**
    * Must be called from a user gesture (click/tap) due to browser autoplay policy.
    */
   async init(): Promise<void> {
     if (this.ctx) return;
-    console.log('[AudioEngine] init() called');
 
     // iOS: route audio through the "media" category so the hardware mute
     // switch does NOT silence playback. Playing a silent <audio> element
@@ -53,7 +50,6 @@ export class AudioEngine {
     this.unlockIOSAudioCategory();
 
     this.ctx = new AudioContext({ latencyHint: 'playback' });
-    console.log('[AudioEngine] AudioContext state:', this.ctx.state);
 
     // iOS: AudioContext starts in 'suspended' state. resume() MUST be called
     // synchronously inside the gesture stack — a deferred resume from the
@@ -66,7 +62,6 @@ export class AudioEngine {
 
     this.initDeepSpaceDrone();
     this.started = true;
-    console.log('[AudioEngine] Drone initialized, started =', this.started);
   }
 
   /**
@@ -297,13 +292,9 @@ export class AudioEngine {
   private async ensureStemsLoaded(config: CelestialBodyConfig): Promise<void> {
     if (!this.ctx) return;
 
-    const stemUrls = config.stems.length > 0
-      ? config.stems
-      : []; // Pool-based loading would go here in Phase 2
-
     const now = performance.now();
 
-    for (const url of stemUrls) {
+    for (const url of config.stems) {
       const stemId = `${config.id}:${url}`;
       const existing = this.stems.get(stemId);
 
@@ -434,11 +425,10 @@ export class AudioEngine {
    */
   private evictStaleStems(): void {
     const now = performance.now();
-    const EVICT_AFTER_MS = 30_000;
 
     for (const [id, stem] of this.stems) {
       if (stem.state !== 'ready') continue;
-      if (now - stem.lastActiveTime < EVICT_AFTER_MS) continue;
+      if (now - stem.lastActiveTime < STEM_EVICTION_DELAY_MS) continue;
       if (stem.gainNode && stem.gainNode.gain.value > 0.001) continue;
 
       // Evict: stop source, disconnect, free buffer

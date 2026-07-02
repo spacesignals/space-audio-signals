@@ -12,6 +12,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8322", "--directory", "tests"],
       "port": 8322
+    },
+    {
+      "name": "app-qa",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "app", "--port", "5174", "--strictPort"],
+      "port": 5174
     }
   ]
 }

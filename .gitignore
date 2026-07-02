@@ -9,3 +9,6 @@ old/
 
 # gstack tooling state
 .gstack/
+
+# personal Claude Code settings (per-user, not for the repo)
+.claude/settings.local.json

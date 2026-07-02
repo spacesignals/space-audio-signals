@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>spacesignals — Zen Drift II</title>
+<style>
+  :root {
+    --text: rgba(240, 238, 232, 0.9);
+    --dim: rgba(240, 238, 232, 0.38);
+    --faint: rgba(240, 238, 232, 0.16);
+    --accent: #8fd0ff;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #030309; }
+  body {
+    font-family: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+    color: var(--text); user-select: none;
+  }
+  canvas#stars { position: fixed; inset: 0; }
+
+  .nebula {
+    position: fixed; inset: -20%;
+    background:
+      radial-gradient(ellipse 45% 40% at 30% 60%, rgba(80, 60, 140, 0.16), transparent 70%),
+      radial-gradient(ellipse 40% 45% at 72% 30%, rgba(40, 90, 130, 0.14), transparent 70%);
+    animation: nebdrift 60s ease-in-out infinite alternate;
+    pointer-events: none;
+  }
+  @keyframes nebdrift {
+    from { transform: translate(0, 0) rotate(0deg); }
+    to { transform: translate(4%, -3%) rotate(3deg); }
+  }
+
+  /* ---------- bottom center: now line ---------- */
+  .nowline {
+    position: fixed; bottom: 128px; left: 0; right: 0;
+    text-align: center; pointer-events: none;
+    transition: opacity 0.7s var(--ease);
+  }
+  body.menu-open .nowline { opacity: 0.08; }
+  .nowline .body {
+    font-size: 34px; font-weight: 300; letter-spacing: 14px; text-indent: 14px;
+    text-transform: lowercase; transition: opacity 1s var(--ease);
+  }
+  .nowline .dist {
+    margin-top: 10px; letter-spacing: 6px; text-indent: 6px;
+    color: var(--dim); font-variant-numeric: tabular-nums;
+    font-family: system-ui, sans-serif; font-weight: 300; font-size: 11px;
+  }
+
+  /* ---------- the orb row (three menu triggers) ---------- */
+  .orb-row {
+    position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 34px; z-index: 5;
+  }
+  .orb-unit { display: flex; flex-direction: column; align-items: center; gap: 9px; }
+  .orb-btn {
+    position: relative; border-radius: 50%;
+    border: 1px solid var(--dim); background: transparent; cursor: pointer;
+    transition: transform 0.6s var(--ease), border-color 0.6s;
+  }
+  .orb-btn:hover { border-color: var(--text); }
+  .orb-btn.big { width: 42px; height: 42px; }
+  .orb-btn.small { width: 30px; height: 30px; }
+  .orb-btn::before {
+    content: ''; position: absolute; border-radius: 50%;
+    background: var(--text); opacity: 0.85;
+    animation: pulse 4.5s ease-in-out infinite;
+  }
+  .orb-btn.big::before { inset: 13px; }
+  .orb-btn.small::before { inset: 10px; animation-delay: 1.2s; }
+  .orb-btn.small.views::before { animation-delay: 2.4s; }
+  @keyframes pulse {
+    0%, 100% { transform: scale(0.72); opacity: 0.45; }
+    50% { transform: scale(1); opacity: 0.9; }
+  }
+  .orb-btn.open { transform: rotate(45deg); border-color: var(--text); }
+  .orb-btn.open::before {
+    animation: none; opacity: 0.9; border-radius: 0; background: var(--text);
+    clip-path: polygon(46% 0, 54% 0, 54% 46%, 100% 46%, 100% 54%, 54% 54%, 54% 100%, 46% 100%, 46% 54%, 0 54%, 0 46%, 46% 46%);
+  }
+  .orb-btn.big.open::before { inset: 9px; }
+  .orb-btn.small.open::before { inset: 7px; }
+  .orb-lbl {
+    font-family: system-ui, sans-serif; font-size: 9px; letter-spacing: 3px;
+    text-transform: uppercase; color: var(--faint);
+    transition: color 0.4s;
+  }
+  .orb-unit:hover .orb-lbl, .orb-unit.open .orb-lbl { color: var(--dim); }
+
+  /* ---------- radial constellation menus ---------- */
+  .constellation { position: fixed; bottom: 60px; left: 50%; width: 0; height: 0; pointer-events: none; z-index: 4; }
+  .c-item {
+    position: absolute; left: 0; top: 0;
+    transform: translate(-50%, -50%);
+    background: none; border: none; cursor: pointer; color: var(--dim);
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.5s var(--ease), transform 0.7s var(--ease), color 0.4s;
+    font-family: inherit;
+  }
+  .constellation.open .c-item { opacity: 1; pointer-events: auto; }
+  .c-item .pt {
+    width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+    box-shadow: 0 0 12px currentColor; transition: transform 0.4s var(--ease);
+  }
+  .c-item:hover { color: var(--text); }
+  .c-item:hover .pt { transform: scale(1.7); }
+  .c-item .nm { font-size: 14px; letter-spacing: 4px; text-transform: lowercase; white-space: nowrap; }
+  .c-item.sel { color: var(--text); }
+
+  svg.arc {
+    position: fixed; inset: 0; pointer-events: none; z-index: 3;
+    opacity: 0; transition: opacity 0.8s var(--ease);
+  }
+  body.menu-open svg.arc { opacity: 1; }
+
+  /* ---------- corner whisper ---------- */
+  .whisper {
+    position: fixed; font-family: system-ui, sans-serif;
+    font-size: 10px; letter-spacing: 4px; text-transform: uppercase;
+    color: var(--faint); cursor: pointer; background: none; border: none;
+    padding: 10px; transition: color 0.5s;
+  }
+  .whisper:hover { color: var(--dim); }
+  .whisper.tl { top: 22px; left: 22px; }
+
+  /* ---------- quiet settings sheet ---------- */
+  .sheet {
+    position: fixed; inset: 0; z-index: 20;
+    display: grid; place-items: center;
+    background: rgba(3, 3, 9, 0.82); backdrop-filter: blur(8px);
+    opacity: 0; pointer-events: none; transition: opacity 0.6s var(--ease);
+  }
+  .sheet.open { opacity: 1; pointer-events: auto; }
+  .sheet .inner { width: 300px; text-align: center; }
+  .sheet h3 { font-weight: 300; font-size: 22px; letter-spacing: 8px; text-transform: lowercase; margin-bottom: 44px; }
+  .sh-row { margin: 30px 0; }
+  .sh-row .k {
+    font-family: system-ui, sans-serif; font-size: 10px; letter-spacing: 4px;
+    text-transform: uppercase; color: var(--dim); display: block; margin-bottom: 14px;
+  }
+  input[type="range"] {
+    -webkit-appearance: none; width: 100%; height: 1px; background: var(--faint);
+    outline: none; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
+    background: #030309; border: 1px solid var(--text);
+    transition: background 0.3s;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { background: var(--text); }
+  .sh-toggle {
+    font-family: system-ui, sans-serif; font-size: 10px; letter-spacing: 4px;
+    text-transform: uppercase; background: none; cursor: pointer;
+    color: var(--dim); border: 1px solid var(--faint); border-radius: 999px;
+    padding: 9px 22px; margin: 4px; transition: all 0.4s;
+  }
+  .sh-toggle.on { color: var(--text); border-color: var(--dim); }
+  .sheet .close { margin-top: 40px; color: var(--faint); border: none; }
+  .sheet .close:hover { color: var(--text); }
+
+  /* ---------- start overlay (from Orbital Dock, lowercase) ---------- */
+  .start {
+    position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
+    background: radial-gradient(ellipse at 50% 45%, #060b1a 0%, #030309 75%);
+    cursor: pointer; transition: opacity 0.9s var(--ease), visibility 0.9s;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .start.gone { opacity: 0; visibility: hidden; }
+  .start .ring {
+    width: 130px; height: 130px; border-radius: 50%;
+    border: 1px solid rgba(143, 208, 255, 0.35);
+    display: grid; place-items: center; margin: 0 auto 34px;
+    animation: spin-ring 14s linear infinite; position: relative;
+  }
+  .start .ring::before {
+    content: ''; position: absolute; top: -4px; left: 50%; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent);
+  }
+  .start .core {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ffe9b0, #c98a2e);
+    box-shadow: 0 0 40px rgba(255, 200, 90, 0.5);
+  }
+  @keyframes spin-ring { to { transform: rotate(360deg); } }
+  .start h1 { font-size: 26px; font-weight: 200; letter-spacing: 10px; text-align: center; margin-bottom: 10px; text-transform: lowercase; }
+  .start p { font-size: 11px; letter-spacing: 3px; color: var(--dim); text-align: center; }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+<div class="nebula"></div>
+
+<div class="start" id="start">
+  <div>
+    <div class="ring"><div class="core"></div></div>
+    <h1>spacesignals</h1>
+    <p>click to enter the system</p>
+  </div>
+</div>
+
+<button class="whisper tl" id="w-settings">settings</button>
+
+<div class="nowline">
+  <div class="body" id="now-body">deep space</div>
+  <div class="dist" id="now-dist">the drone hums between worlds</div>
+</div>
+
+<svg class="arc" id="arc"></svg>
+<div class="constellation" id="menu-moons"></div>
+<div class="constellation" id="menu-worlds"></div>
+<div class="constellation" id="menu-views"></div>
+
+<div class="orb-row">
+  <div class="orb-unit" id="unit-moons">
+    <button class="orb-btn small" data-menu="moons" title="Moons"></button>
+    <span class="orb-lbl">moons</span>
+  </div>
+  <div class="orb-unit" id="unit-worlds">
+    <button class="orb-btn big" data-menu="worlds" title="Worlds"></button>
+    <span class="orb-lbl">worlds</span>
+  </div>
+  <div class="orb-unit" id="unit-views">
+    <button class="orb-btn small views" data-menu="views" title="Views"></button>
+    <span class="orb-lbl">views</span>
+  </div>
+</div>
+
+<div class="sheet" id="sheet">
+  <div class="inner">
+    <h3>settings</h3>
+    <div class="sh-row"><span class="k">volume</span><input type="range" min="0" max="100" value="75"></div>
+    <div class="sh-row"><span class="k">glow</span><input type="range" min="0" max="200" value="100"></div>
+    <div class="sh-row"><span class="k">drift speed</span><input type="range" id="drift" min="0" max="100" value="40"></div>
+    <div>
+      <button class="sh-toggle" id="t-labels">labels</button>
+      <button class="sh-toggle on" id="t-bg">background audio</button>
+    </div>
+    <button class="whisper close" id="sheet-close">return</button>
+  </div>
+</div>
+
+<script>
+/* ---------- soft starfield ---------- */
+const cvs = document.getElementById('stars'), ctx = cvs.getContext('2d');
+let W, H, stars = [];
+function resize() {
+  W = cvs.width = innerWidth * devicePixelRatio;
+  H = cvs.height = innerHeight * devicePixelRatio;
+  cvs.style.width = innerWidth + 'px'; cvs.style.height = innerHeight + 'px';
+  stars = Array.from({ length: 300 }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    z: 0.15 + Math.random() * 0.85, tw: Math.random() * 7,
+  }));
+}
+addEventListener('resize', resize); resize();
+let drift = 0.018, t0 = 0;
+function frame(t) {
+  const dt = Math.min(t - t0, 50); t0 = t;
+  ctx.fillStyle = '#030309'; ctx.fillRect(0, 0, W, H);
+  for (const s of stars) {
+    s.x -= drift * s.z * dt * devicePixelRatio;
+    s.y += drift * 0.3 * s.z * dt * devicePixelRatio;
+    if (s.x < 0) s.x = W; if (s.y > H) s.y = 0;
+    s.tw += 0.0012 * dt;
+    const a = 0.2 + 0.45 * s.z + 0.22 * Math.sin(s.tw);
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.z * 1.1 * devicePixelRatio, 0, 7);
+    ctx.fillStyle = `rgba(235,232,244,${a})`;
+    ctx.fill();
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- menu data ---------- */
+const WORLDS = [
+  ['sun', '#e8c37a'], ['mercury', '#b0a190'], ['venus', '#ddc19a'], ['earth', '#8fb7ef'],
+  ['mars', '#d4795a'], ['jupiter', '#d3a86e'], ['saturn', '#e3cf9b'], ['uranus', '#93cdd4'],
+  ['neptune', '#7a8ce8'], ['pluto', '#cbbb9a'],
+];
+const MOONS = [
+  ['moon', '#c8c8c8'], ['io', '#c8b040'], ['europa', '#b8a890'], ['ganymede', '#908070'],
+  ['callisto', '#7a6a58'], ['titan', '#d4a030'], ['enceladus', '#f0f0f0'],
+  ['triton', '#c8b8a8'], ['charon', '#a89888'],
+];
+const VIEWS = [
+  ['grand tour', '#8fd0ff'], ['top view', '#c9b8ff'],
+];
+
+const MENUS = {
+  // span = fraction of PI each side of vertical; 0.38 ≈ the 160°–20° arc of the original
+  moons:  { items: MOONS,  radiusMax: 310, yScale: 0.55, span: 0.38 },
+  worlds: { items: WORLDS, radiusMax: 330, yScale: 0.55, span: 0.38 },
+  views:  { items: VIEWS,  radiusMax: 150, yScale: 0.75, span: 0.21 },
+};
+
+/* ---------- build menus ---------- */
+const arc = document.getElementById('arc');
+let openMenu = null, selEl = null;
+
+for (const [name, cfg] of Object.entries(MENUS)) {
+  cfg.el = document.getElementById('menu-' + name);
+  cfg.btn = document.querySelector(`.orb-btn[data-menu="${name}"]`);
+  cfg.unit = document.getElementById('unit-' + name);
+  cfg.nodes = cfg.items.map(([label, color]) => {
+    const b = document.createElement('button');
+    b.className = 'c-item';
+    b.innerHTML = `<span class="pt" style="color:${color}"></span><span class="nm">${label}</span>`;
+    b.onclick = (e) => {
+      e.stopPropagation();
+      if (name === 'views') runView(label);
+      else select(label, b);
+    };
+    cfg.el.appendChild(b);
+    return b;
+  });
+  cfg.btn.onclick = (e) => {
+    e.stopPropagation();
+    setOpen(openMenu === name ? null : name);
+  };
+}
+
+function setOpen(name) {
+  openMenu = name;
+  document.body.classList.toggle('menu-open', !!name);
+  for (const [n, cfg] of Object.entries(MENUS)) {
+    const on = n === name;
+    cfg.el.classList.toggle('open', on);
+    cfg.btn.classList.toggle('open', on);
+    cfg.unit.classList.toggle('open', on);
+  }
+  layout();
+}
+document.addEventListener('click', () => { if (openMenu) setOpen(null); });
+
+/* ---------- layout ---------- */
+function itemPos(cfg, i) {
+  const n = cfg.items.length;
+  const R = Math.min(innerWidth * 0.36, cfg.radiusMax);
+  // arc spanning `span` of a half-circle, centred over the orb row
+  const half = Math.PI * cfg.span;
+  const a = Math.PI / 2 + half - (n === 1 ? half : (i / (n - 1)) * 2 * half);
+  const stagger = n > 4 ? (i % 2 ? -30 : 12) : 0;
+  return {
+    x: Math.cos(a) * R,
+    y: -Math.sin(a) * (R * cfg.yScale) - 40 + stagger,
+  };
+}
+function layout() {
+  for (const cfg of Object.values(MENUS)) {
+    const isOpen = cfg.el.classList.contains('open');
+    cfg.nodes.forEach((b, i) => {
+      if (isOpen) {
+        const { x, y } = itemPos(cfg, i);
+        b.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+      } else {
+        b.style.transform = 'translate(-50%, -50%)';
+      }
+    });
+  }
+  // dashed arc through the open menu's points
+  arc.setAttribute('viewBox', `0 0 ${innerWidth} ${innerHeight}`);
+  if (!openMenu) { arc.innerHTML = ''; return; }
+  const cfg = MENUS[openMenu];
+  const cx = innerWidth / 2, cy = innerHeight - 60;
+  let d = '';
+  cfg.nodes.forEach((b, i) => {
+    const { x, y } = itemPos(cfg, i);
+    d += (i === 0 ? 'M' : 'L') + (cx + x).toFixed(1) + ' ' + (cy + y).toFixed(1) + ' ';
+  });
+  arc.innerHTML = `<path d="${d}" fill="none" stroke="rgba(240,238,232,0.1)" stroke-width="1" stroke-dasharray="2 6"/>`;
+}
+addEventListener('resize', layout);
+
+/* ---------- travel poetry ---------- */
+const nowBody = document.getElementById('now-body'), nowDist = document.getElementById('now-dist');
+let target = null, dist = 0;
+const MOODS = {
+  sun: 'warmth swells through every stem', mercury: 'seven pads shimmer in the heat',
+  venus: 'clouded tones, thick and golden', earth: 'home frequencies, blue and familiar',
+  mars: 'dry winds carry a thin drone', jupiter: 'vast bass beneath banded storms',
+  saturn: 'rings ring softly', uranus: 'a tilted, distant hum',
+  neptune: 'the deepest blue of the mix', pluto: 'the quietest signal of all',
+  moon: 'silver echoes of home', io: 'sulfur bells over restless fire',
+  europa: 'thin tones beneath the ice', ganymede: 'a slow, heavy resonance',
+  callisto: 'old craters, older silence', titan: 'orange haze, muffled and warm',
+  enceladus: 'geysers hiss in high frequencies', triton: 'a backwards, frozen waltz',
+  charon: 'half of a quiet duet',
+};
+function select(name, el) {
+  selEl?.classList.remove('sel');
+  el.classList.add('sel'); selEl = el;
+  target = name; dist = 2e8 + Math.random() * 4e8;
+  setOpen(null);
+  nowBody.style.opacity = 0;
+  setTimeout(() => { nowBody.textContent = name; nowBody.style.opacity = 1; }, 500);
+}
+function fmt(km) {
+  if (km > 1e9) return (km / 1.496e8).toFixed(2) + ' au away';
+  if (km > 1e6) return (km / 1e6).toFixed(1) + ' million km away';
+  return Math.round(km).toLocaleString() + ' km away';
+}
+setInterval(() => {
+  if (!target) return;
+  dist = Math.max(dist * 0.968, 9e5);
+  nowDist.textContent = dist <= 1e6 ? (MOODS[target] || 'you have arrived') : fmt(dist);
+}, 120);
+
+/* ---------- views ---------- */
+let tourTimer = null;
+function runView(label) {
+  setOpen(null);
+  if (label === 'top view') {
+    clearInterval(tourTimer); target = null;
+    nowBody.style.opacity = 0;
+    setTimeout(() => {
+      nowBody.textContent = 'top view'; nowBody.style.opacity = 1;
+      nowDist.textContent = 'looking down on the plane of the ecliptic';
+    }, 500);
+  } else { // grand tour
+    clearInterval(tourTimer);
+    const order = WORLDS.map(w => w[0]);
+    let i = 0;
+    const step = () => {
+      if (i >= order.length) { clearInterval(tourTimer); return; }
+      select(order[i], MENUS.worlds.nodes[i]);
+      i++;
+    };
+    step();
+    tourTimer = setInterval(step, 6000);
+  }
+}
+
+/* ---------- sheet ---------- */
+const sheet = document.getElementById('sheet');
+document.getElementById('w-settings').onclick = (e) => { e.stopPropagation(); sheet.classList.add('open'); };
+document.getElementById('sheet-close').onclick = () => sheet.classList.remove('open');
+sheet.addEventListener('click', (e) => { if (e.target === sheet) sheet.classList.remove('open'); });
+document.querySelectorAll('.sh-toggle').forEach(t => t.onclick = () => t.classList.toggle('on'));
+document.getElementById('drift').oninput = function () { drift = 0.004 + (this.value / 100) * 0.08; };
+
+/* ---------- start ---------- */
+document.getElementById('start').onclick = function () {
+  this.classList.add('gone');
+};
+layout();
+</script>
+</body>
+</html>

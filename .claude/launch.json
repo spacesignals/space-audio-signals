@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8321", "--directory", "tests"],
       "port": 8321
+    },
+    {
+      "name": "qa-gallery",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8322", "--directory", "tests"],
+      "port": 8322
     }
   ]
 }

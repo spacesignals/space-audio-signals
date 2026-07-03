@@ -6,7 +6,7 @@ import { PostProcessing } from './engine/PostProcessing';
 import { AudioEngine } from './audio/AudioEngine';
 import { HUD } from './ui/HUD.tsx';
 import { PerformanceMonitor } from './engine/PerformanceMonitor';
-import { BODIES } from './data/bodies';
+import { BODIES, MOON_ORBITS } from './data/bodies';
 import { CAMERA_FOV, CAMERA_NEAR, CAMERA_FAR, KM_PER_UNIT } from './data/constants';
 import type { BodyDistance } from './types';
 
@@ -120,8 +120,32 @@ class App {
   }
 
   private setup(): void {
-    // Tour: Sun -> planets in order (skip moons/dwarf planets for tour)
+    // Planet focus tour: Sun -> planets in order (skips moons/asteroids)
     const tourOrder = ['sun', 'mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'pluto'];
+
+    const waypointsFor = (ids: string[]) => ids.map(id => ({
+      bodyId: id,
+      position: this.solarSystem.getBodyPosition(id) || new THREE.Vector3(),
+      visualRadius: this.solarSystem.getBodyVisualRadius(id) || 0.1,
+    }));
+    const liveBodyPosition = (id: string) => this.solarSystem.getBodyPosition(id);
+
+    // Ambient moon tour: every moon, ordered sunward-out — by the parent
+    // planet's live distance from the Sun, then inner-to-outer within each system.
+    const moonTourIds = (): string[] => {
+      const parentDist = new Map<string, number>();
+      for (const b of BODIES) {
+        if (b.type !== 'moon' || !b.parentId || parentDist.has(b.parentId)) continue;
+        parentDist.set(b.parentId, this.solarSystem.getBodyPosition(b.parentId)?.length() ?? Infinity);
+      }
+      return BODIES
+        .filter(b => b.type === 'moon' && b.parentId)
+        .sort((a, b) =>
+          (parentDist.get(a.parentId!)! - parentDist.get(b.parentId!)!) ||
+          ((MOON_ORBITS[a.id]?.semiMajorAxisKm ?? 0) - (MOON_ORBITS[b.id]?.semiMajorAxisKm ?? 0))
+        )
+        .map(b => b.id);
+    };
 
     // Background audio toggle (default: enabled — audio continues when tab hidden)
     let backgroundAudioEnabled = true;
@@ -141,15 +165,10 @@ class App {
         this.running = true;
       },
       onTour: () => {
-        const waypoints = tourOrder.map(id => {
-          const pos = this.solarSystem.getBodyPosition(id) || new THREE.Vector3();
-          const visualRadius = this.solarSystem.getBodyVisualRadius(id) || 0.1;
-          return { bodyId: id, position: pos, visualRadius };
-        });
-        this.navigation.startTour(
-          waypoints,
-          (id) => this.solarSystem.getBodyPosition(id),
-        );
+        this.navigation.startTour(waypointsFor(tourOrder), liveBodyPosition);
+      },
+      onMoonTour: () => {
+        this.navigation.startTour(waypointsFor(moonTourIds()), liveBodyPosition);
       },
       onTopView: () => this.navigation.flyToTopView(),
       onToggleLabels: (visible) => this.solarSystem.setLabelsVisible(visible),

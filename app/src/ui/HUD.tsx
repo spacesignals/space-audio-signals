@@ -75,6 +75,10 @@ const CSS = `
   color: var(--dim); margin-top: 6px; font-variant-numeric: tabular-nums;
 }
 .zi-row.live { color: var(--soft); }
+@media (max-width: 700px) {
+  /* below the corner toggles so the two blocks never collide */
+  .zen-info { top: 210px; }
+}
 
 /* ---------- orb row ---------- */
 .orb-row {
@@ -219,6 +223,7 @@ interface HUDCallbacks {
   onBodySelect: (bodyId: string) => void;
   onStart: () => void;
   onTour: () => void;
+  onMoonTour: () => void;
   onTopView: () => void;
   onToggleLabels: (visible: boolean) => void;
   onToggleDebug: () => void;
@@ -264,19 +269,22 @@ function arcPositions(
 ): { x: number; y: number }[] {
   const R = Math.min(window.innerWidth * 0.36, radiusMax);
   const half = Math.PI * span;
+  // Keep long labels inside the viewport on narrow screens
+  const xLimit = Math.max(window.innerWidth / 2 - 110, 60);
   return Array.from({ length: n }, (_, i) => {
     const a = Math.PI / 2 + half - (n === 1 ? half : (i / (n - 1)) * 2 * half);
     // Stagger alternate items vertically so adjacent labels never collide;
     // dense menus (many moons) cycle three levels instead of two.
     const stagger = dense ? [14, -26, -64][i % 3] : n > 4 ? (i % 2 ? -30 : 12) : 0;
-    return { x: Math.cos(a) * R, y: -Math.sin(a) * (R * yScale) - 40 + stagger };
+    const x = Math.max(-xLimit, Math.min(xLimit, Math.cos(a) * R));
+    return { x, y: -Math.sin(a) * (R * yScale) - 40 + stagger };
   });
 }
 
 const MENU_GEOMETRY: Record<MenuName, { radiusMax: number; yScale: number; span: number }> = {
   moons: { radiusMax: 420, yScale: 0.55, span: 0.4 },
   worlds: { radiusMax: 340, yScale: 0.55, span: 0.38 },
-  views: { radiusMax: 150, yScale: 0.75, span: 0.21 },
+  views: { radiusMax: 210, yScale: 0.75, span: 0.3 },
 };
 
 function Constellation({
@@ -385,8 +393,9 @@ function StartOverlay({ onStart }: { onStart: () => void }) {
 }
 
 const VIEW_ITEMS: MenuItem[] = [
-  { id: 'tour', label: 'grand tour', color: '#8fd0ff' },
+  { id: 'tour', label: 'planet focus tour', color: '#8fd0ff' },
   { id: 'top', label: 'top view', color: '#c9b8ff' },
+  { id: 'moonTour', label: 'ambient moon tour', color: '#d8d8ce' },
 ];
 
 function HUDApp({
@@ -437,6 +446,7 @@ function HUDApp({
   const pickView = (id: string) => {
     setOpenMenu(null);
     if (id === 'tour') callbacks.onTour();
+    else if (id === 'moonTour') callbacks.onMoonTour();
     else callbacks.onTopView();
   };
 
@@ -585,6 +595,7 @@ export class HUD {
     onBodySelect: () => {},
     onStart: () => {},
     onTour: () => {},
+    onMoonTour: () => {},
     onTopView: () => {},
     onToggleLabels: () => {},
     onToggleDebug: () => {},

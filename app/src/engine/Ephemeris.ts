@@ -39,8 +39,8 @@ for (const body of BODIES) {
  */
 export class Ephemeris {
   private positions: Map<string, [number, number, number]> = new Map();
-  private lastUpdateTime = 0;
-  private updateIntervalMs = 1000; // Update positions at 1Hz
+  private lastUpdateTime = -Infinity;
+  private updateIntervalMs = 1000; // astronomy-engine bodies update at 1Hz
 
   constructor() {
     // Sun is always at origin
@@ -48,18 +48,26 @@ export class Ephemeris {
   }
 
   /**
-   * Update body positions if enough time has passed.
+   * Update body positions. Called every frame.
+   *
+   * Planets + Pluto + Earth's Moon (astronomy-engine) update at 1Hz — they
+   * move slowly enough that per-tick jumps are invisible. Circular-orbit
+   * moons and asteroids update EVERY frame: fast inner moons (Phobos orbits
+   * in 7.7h) visibly jump at 1Hz when the camera is orbiting them up close.
+   *
    * Returns positions in Three.js units.
    */
   update(now: number): Map<string, [number, number, number]> {
-    if (now - this.lastUpdateTime < this.updateIntervalMs) {
-      return this.positions;
+    if (now - this.lastUpdateTime >= this.updateIntervalMs) {
+      this.lastUpdateTime = now;
+      this.updateAstronomyBodies(new Date());
     }
-    this.lastUpdateTime = now;
+    this.updateCircularOrbits(Date.now());
+    return this.positions;
+  }
 
-    const date = new Date();
-
-    // Phase 1: compute planets + pluto via astronomy-engine
+  /** Planets, Pluto, and Earth's Moon via astronomy-engine (1Hz). */
+  private updateAstronomyBodies(date: Date): void {
     for (const [bodyId, astroBody] of Object.entries(BODY_MAP)) {
       try {
         if (bodyId === 'moon') {
@@ -91,8 +99,11 @@ export class Ephemeris {
       }
     }
 
-    // Phase 2: compute other moons as circular orbits around their parent
-    const daysSinceJ2000 = (date.getTime() - J2000_MS) / MS_PER_DAY;
+  }
+
+  /** Circular-orbit moons + asteroids (every frame — cheap trig). */
+  private updateCircularOrbits(nowMs: number): void {
+    const daysSinceJ2000 = (nowMs - J2000_MS) / MS_PER_DAY;
 
     for (const [moonId, orbit] of Object.entries(MOON_ORBITS)) {
       if (moonId === 'moon') continue; // handled above via astronomy-engine
@@ -112,7 +123,7 @@ export class Ephemeris {
       this.positions.set(moonId, [x, y, z]);
     }
 
-    // Phase 3: asteroids and dwarf planets on simple solar orbits
+    // Asteroids and dwarf planets on simple solar orbits
     for (const [id, orbit] of Object.entries(ASTEROID_ORBITS)) {
       const angle = (2 * Math.PI * daysSinceJ2000) / orbit.periodDays;
       const radiusUnits = (orbit.semiMajorAxisAU * AU_TO_KM) / KM_PER_UNIT;
@@ -124,8 +135,6 @@ export class Ephemeris {
 
       this.positions.set(id, [x, y, z]);
     }
-
-    return this.positions;
   }
 
   getPosition(bodyId: string): [number, number, number] | undefined {

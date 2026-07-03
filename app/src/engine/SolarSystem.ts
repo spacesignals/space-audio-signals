@@ -55,10 +55,11 @@ export class SolarSystem {
       const scale = config.type === 'star' ? SUN_VISUAL_SCALE : BODY_VISUAL_SCALE;
       const radiusUnits = (config.radiusKm / KM_PER_UNIT) * scale;
 
-      // Adaptive tessellation: fewer segments for small bodies
-      const segments = config.type === 'star' ? 64
-        : config.type === 'planet' ? 48
-        : 32; // moons, dwarf planets, asteroids
+      // Adaptive tessellation: fewer segments for small bodies.
+      // High enough that silhouettes stay round when the camera is close.
+      const segments = config.type === 'star' ? 128
+        : config.type === 'planet' ? 96
+        : 64; // moons, dwarf planets, asteroids
       const geometry = new THREE.SphereGeometry(radiusUnits, segments, segments / 2);
 
       // Only generate procedural texture if no real texture file exists

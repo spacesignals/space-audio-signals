@@ -37,6 +37,8 @@ export class Navigation {
   private lastMouseY = 0;
   private yaw = 0;
   private pitch = 0;
+  // Touch cruise: double-tap toggles continuous forward flight (steer by dragging)
+  private autoCruise = false;
 
   // Focus travel state — smooth position + orientation
   private travelStart: THREE.Vector3 | null = null;
@@ -169,6 +171,7 @@ export class Navigation {
   private setupKeyboard(): void {
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.key.toLowerCase());
+      this.autoCruise = false;
 
       // Speed control
       if (e.key === '=' || e.key === '+') {
@@ -227,15 +230,31 @@ export class Navigation {
     let lastTouchX = 0;
     let lastTouchY = 0;
     let touchStartDist = 0;
+    let lastCentroidY = 0;
+    // Double-tap detection state
+    let tapStartX = 0;
+    let tapStartY = 0;
+    let tapStartTime = 0;
+    let tapMoved = false;
+    let lastTapTime = 0;
 
     canvas.addEventListener('touchstart', (e) => {
+      // Touch interrupts tours/travel, same as mousedown (autoCruise survives —
+      // it's a free-flight modifier the user steers while cruising)
+      this.interruptAutopilot();
       if (e.touches.length === 1) {
         lastTouchX = e.touches[0].clientX;
         lastTouchY = e.touches[0].clientY;
+        tapStartX = lastTouchX;
+        tapStartY = lastTouchY;
+        tapStartTime = performance.now();
+        tapMoved = false;
       } else if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         touchStartDist = Math.sqrt(dx * dx + dy * dy);
+        lastCentroidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        tapMoved = true; // multi-touch is never a tap
       }
     }, { passive: true });
 
@@ -246,12 +265,16 @@ export class Navigation {
         const dy = e.touches[0].clientY - lastTouchY;
         lastTouchX = e.touches[0].clientX;
         lastTouchY = e.touches[0].clientY;
+        if (Math.abs(e.touches[0].clientX - tapStartX) > 10 ||
+            Math.abs(e.touches[0].clientY - tapStartY) > 10) {
+          tapMoved = true;
+        }
 
         this.yaw -= dx * 0.005;
         this.pitch -= dy * 0.005;
         this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch));
       } else if (e.touches.length === 2) {
-        // Pinch to zoom (change speed)
+        // Pinch to change speed
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -261,8 +284,38 @@ export class Navigation {
             Math.min(FREE_FLIGHT_SPEED_MAX, this.speed * scale));
           touchStartDist = dist;
         }
+
+        // Two-finger vertical drag: fly forward (drag up) / backward (drag down)
+        const centroidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const dyC = centroidY - lastCentroidY;
+        lastCentroidY = centroidY;
+        if (this.mode === 'free-flight' && dyC !== 0) {
+          this._forward.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+          this.camera.position.addScaledVector(this._forward, -dyC * this.speed * 0.004);
+        }
       }
     }, { passive: false });
+
+    canvas.addEventListener('touchend', (e) => {
+      if (e.touches.length === 1) {
+        // Finger count dropped 2 -> 1: rebase look tracking on the remaining finger
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+      }
+      if (e.touches.length > 0) return;
+
+      // Double-tap: toggle forward cruise
+      const now = performance.now();
+      const isTap = !tapMoved && now - tapStartTime < 250;
+      if (isTap) {
+        if (now - lastTapTime < 350) {
+          this.autoCruise = !this.autoCruise;
+          lastTapTime = 0;
+        } else {
+          lastTapTime = now;
+        }
+      }
+    }, { passive: true });
   }
 
   /**
@@ -321,6 +374,7 @@ export class Navigation {
     this._forward.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
     this._right.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
 
+    if (this.autoCruise) this._direction.add(this._forward);
     if (this.keys.has('w') || this.keys.has('arrowup')) this._direction.add(this._forward);
     if (this.keys.has('s') || this.keys.has('arrowdown')) this._direction.sub(this._forward);
     if (this.keys.has('a')) this._direction.sub(this._right);
@@ -510,6 +564,7 @@ export class Navigation {
   }
 
   private beginFocusTravel(target: THREE.Vector3, bodyVisualRadius?: number, duration?: number): void {
+    this.autoCruise = false;
     this.mode = 'focus-travel';
     this.travelStart = this.camera.position.clone();
     this.travelStartQuat.copy(this.camera.quaternion);
@@ -666,6 +721,7 @@ export class Navigation {
    * Fly to a top-down view centered on the Sun, high enough to see all planets.
    */
   flyToTopView(): void {
+    this.autoCruise = false;
     this.mode = 'top-view-travel';
     this.travelStart = this.camera.position.clone();
     this.travelStartQuat.copy(this.camera.quaternion);
@@ -694,6 +750,7 @@ export class Navigation {
   ): void {
     if (waypoints.length === 0) return;
 
+    this.autoCruise = false;
     this.tourWaypoints = waypoints;
     this.getBodyPosition = getBodyPosition;
     this.onTourComplete = onComplete || null;

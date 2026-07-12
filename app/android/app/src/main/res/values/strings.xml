@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">spacesignals</string>
+    <string name="title_activity_main">spacesignals</string>
+    <string name="package_name">net.spacesignals.galaxy</string>
+    <string name="custom_url_scheme">net.spacesignals.galaxy</string>
+</resources>

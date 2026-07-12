@@ -30,7 +30,9 @@ const CSS = `
 
 /* ---------- top-left corner: settings + toggles ---------- */
 .zen-corner {
-  position: absolute; top: 20px; left: 22px;
+  position: absolute;
+  top: calc(20px + env(safe-area-inset-top, 0px));
+  left: calc(22px + env(safe-area-inset-left, 0px));
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
   pointer-events: auto;
 }
@@ -62,7 +64,9 @@ const CSS = `
 
 /* ---------- top-right: live body info ---------- */
 .zen-info {
-  position: absolute; top: 22px; right: 26px;
+  position: absolute;
+  top: calc(22px + env(safe-area-inset-top, 0px));
+  right: calc(26px + env(safe-area-inset-right, 0px));
   text-align: right; pointer-events: none; max-width: 260px;
 }
 .zi-name {
@@ -77,12 +81,14 @@ const CSS = `
 .zi-row.live { color: var(--soft); }
 @media (max-width: 700px) {
   /* below the corner toggles so the two blocks never collide */
-  .zen-info { top: 210px; }
+  .zen-info { top: calc(210px + env(safe-area-inset-top, 0px)); }
 }
 
 /* ---------- orb row ---------- */
 .orb-row {
-  position: absolute; bottom: 36px; left: 50%; transform: translateX(-50%);
+  position: absolute;
+  bottom: calc(36px + env(safe-area-inset-bottom, 0px));
+  left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 34px;
   pointer-events: auto; z-index: 5;
 }
@@ -360,7 +366,24 @@ function ZenCheck({
   );
 }
 
+const IS_TOUCH = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+
 function NavHelp() {
+  if (IS_TOUCH) {
+    return (
+      <div class="zen-navhelp">
+        <h4>Navigation</h4>
+        <table>
+          <tbody>
+            <tr><td>Drag</td><td>Look around</td></tr>
+            <tr><td>Double tap</td><td>Cruise forward on / off</td></tr>
+            <tr><td>Two-finger drag</td><td>Fly forward / backward</td></tr>
+            <tr><td>Pinch</td><td>Change speed</td></tr>
+          </tbody>
+        </table>
+      </div>
+    );
+  }
   return (
     <div class="zen-navhelp">
       <h4>Navigation</h4>
@@ -386,7 +409,7 @@ function StartOverlay({ onStart }: { onStart: () => void }) {
       <div>
         <div class="ring"><div class="core"></div></div>
         <h1>spacesignals</h1>
-        <p>click to enter the system</p>
+        <p>{IS_TOUCH ? 'tap to enter the system' : 'click to enter the system'}</p>
       </div>
     </div>
   );

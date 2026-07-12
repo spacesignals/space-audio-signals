@@ -21,10 +21,20 @@ export class PostProcessing {
     this.scene = scene;
     this.camera = camera;
 
-    const w = renderer.domElement.width;
-    const h = renderer.domElement.height;
+    const size = renderer.getSize(new THREE.Vector2());
+    const pixelRatio = renderer.getPixelRatio();
 
-    this.composer = new EffectComposer(renderer);
+    // Custom render target: HalfFloat keeps HDR headroom for bloom, and MSAA
+    // samples restore antialiasing — the composer path bypasses the canvas's
+    // own AA, so without this every composed frame renders aliased.
+    const renderTarget = new THREE.WebGLRenderTarget(
+      Math.round(size.width * pixelRatio),
+      Math.round(size.height * pixelRatio),
+      { type: THREE.HalfFloatType, samples: 4 }
+    );
+    this.composer = new EffectComposer(renderer, renderTarget);
+    this.composer.setPixelRatio(pixelRatio);
+    this.composer.setSize(size.width, size.height);
 
     // Pass 1: render the scene
     const renderPass = new RenderPass(scene, camera);
@@ -32,11 +42,17 @@ export class PostProcessing {
 
     // Pass 2: bloom (only bright pixels above threshold)
     this.bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(w, h),
+      new THREE.Vector2(size.width / 2, size.height / 2),
       0.5,   // strength
       0.3,   // radius
       1.2    // threshold — only very bright pixels (Sun core) bloom
     );
+    // Bloom is a heavy blur — run it at half resolution (visually identical,
+    // large fill-rate saving). Composer.setSize forwards the full size to every
+    // pass, so intercept and halve it here.
+    const origSetSize = this.bloomPass.setSize.bind(this.bloomPass);
+    this.bloomPass.setSize = (w: number, h: number) =>
+      origSetSize(Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2)));
     this.composer.addPass(this.bloomPass);
 
     // Pass 3: tone mapping output
@@ -53,6 +69,12 @@ export class PostProcessing {
   }
 
   resize(width: number, height: number): void {
+    this.composer.setSize(width, height);
+  }
+
+  /** Update pixel ratio (adaptive resolution scaling) and re-apply size. */
+  setPixelRatio(pixelRatio: number, width: number, height: number): void {
+    this.composer.setPixelRatio(pixelRatio);
     this.composer.setSize(width, height);
   }
 

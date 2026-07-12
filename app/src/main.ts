@@ -6,6 +6,7 @@ import { PostProcessing } from './engine/PostProcessing';
 import { AudioEngine } from './audio/AudioEngine';
 import { HUD } from './ui/HUD.tsx';
 import { PerformanceMonitor } from './engine/PerformanceMonitor';
+import { AdaptiveResolution } from './engine/AdaptiveResolution';
 import { BODIES, MOON_ORBITS } from './data/bodies';
 import { CAMERA_FOV, CAMERA_NEAR, CAMERA_FAR, KM_PER_UNIT } from './data/constants';
 import type { BodyDistance } from './types';
@@ -44,6 +45,7 @@ class App {
 
   private clock = new THREE.Clock();
   private running = false;
+  private adaptiveRes: AdaptiveResolution;
   private _audioFwd = new THREE.Vector3();
   private _audioUp = new THREE.Vector3();
   private lastHudUpdate = 0;
@@ -76,12 +78,25 @@ class App {
 
     // Systems
     this.ephemeris = new Ephemeris();
-    this.solarSystem = new SolarSystem(this.scene);
+    this.solarSystem = new SolarSystem(
+      this.scene,
+      this.renderer.capabilities.getMaxAnisotropy(),
+      (texture) => this.renderer.initTexture(texture)
+    );
     this.navigation = new Navigation(this.camera, this.renderer.domElement);
     this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera);
     this.audioEngine = new AudioEngine();
     this.hud = new HUD();
     this.perfMonitor = new PerformanceMonitor();
+
+    // Dynamic render-scale: steps resolution down on weak GPUs (phones), back up with headroom
+    this.adaptiveRes = new AdaptiveResolution(
+      Math.min(window.devicePixelRatio, 2),
+      (pixelRatio) => {
+        this.renderer.setPixelRatio(pixelRatio);
+        this.postProcessing.setPixelRatio(pixelRatio, window.innerWidth, window.innerHeight);
+      }
+    );
   }
 
   static async create(): Promise<App> {
@@ -202,6 +217,8 @@ class App {
 
     const deltaTime = this.clock.getDelta();
     const now = performance.now();
+
+    this.adaptiveRes.tick(deltaTime);
 
     // Update ephemeris (positions at 1Hz)
     const positions = this.ephemeris.update(now);

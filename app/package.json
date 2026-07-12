@@ -6,15 +6,21 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:mobile": "vite build --mode capacitor",
+    "sync:mobile": "vite build --mode capacitor && cap sync"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.1",
     "@preact/preset-vite": "^2.10.5",
     "typescript": "~5.9.3",
     "vite": "^8.0.1",
     "vitest": "^4.1.2"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
+    "@capacitor/ios": "^8.4.1",
     "@types/three": "^0.183.1",
     "astronomy-engine": "^2.1.19",
     "preact": "^10.29.1",

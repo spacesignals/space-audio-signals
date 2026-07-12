@@ -25,9 +25,21 @@ export class SolarSystem {
   private textureLoader = new THREE.TextureLoader();
   private sunLight: THREE.PointLight;
   private _labelWorldPos = new THREE.Vector3(); // reusable for updateLabels
+  private maxAnisotropy: number;
+  private labelsVisible = true;
+  private starTime = 0;
+  private starMaterial: THREE.ShaderMaterial | null = null;
 
-  constructor(scene: THREE.Scene) {
+  private uploadTexture?: (texture: THREE.Texture) => void;
+
+  constructor(
+    scene: THREE.Scene,
+    maxAnisotropy = 1,
+    uploadTexture?: (texture: THREE.Texture) => void
+  ) {
     this.scene = scene;
+    this.maxAnisotropy = maxAnisotropy;
+    this.uploadTexture = uploadTexture;
 
     // Sun as the sole light source
     this.sunLight = new THREE.PointLight(0xffffff, 3, 0, 0);
@@ -39,6 +51,20 @@ export class SolarSystem {
     this.scene.add(ambient);
 
     this.createStarfield();
+  }
+
+  /**
+   * Mark a color texture as sRGB and enable anisotropic filtering.
+   * Without the sRGB tag the renderer treats texel values as linear and the
+   * output encode washes them out (low contrast, desaturated).
+   */
+  private prepColorTexture(texture: THREE.Texture): THREE.Texture {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = this.maxAnisotropy;
+    // Upload to the GPU now (at load time) instead of stalling the frame
+    // where the texture first becomes visible.
+    this.uploadTexture?.(texture);
+    return texture;
   }
 
   /**
@@ -70,15 +96,18 @@ export class SolarSystem {
       let material: THREE.Material;
 
       if (config.emissive) {
-        // Sun: emissive, unlit
+        // Sun: emissive, unlit. Color multiplier pushes luminance into HDR
+        // (>1.0) so the bloom pass threshold actually catches the Sun.
         material = new THREE.MeshBasicMaterial({
-          color: new THREE.Color(config.color || '#FDB813'),
+          color: new THREE.Color(config.color || '#FDB813').multiplyScalar(2.5),
           ...(proceduralTex ? { map: proceduralTex } : {}),
+          toneMapped: true,
         });
         if (config.textureFile) {
           this.textureLoader.load(`${import.meta.env.BASE_URL}textures/${config.textureFile}`, (texture) => {
+            this.prepColorTexture(texture);
             (material as THREE.MeshBasicMaterial).map = texture;
-            (material as THREE.MeshBasicMaterial).color.set(0xffffff);
+            (material as THREE.MeshBasicMaterial).color.setScalar(2.5);
             (material as THREE.MeshBasicMaterial).needsUpdate = true;
           });
         }
@@ -102,6 +131,7 @@ export class SolarSystem {
           this.textureLoader.load(
             `${import.meta.env.BASE_URL}textures/${config.textureFile}`,
             (texture) => {
+              this.prepColorTexture(texture);
               const mat = material as THREE.MeshStandardMaterial;
               mat.map = texture;
               mat.color.set(0xffffff);
@@ -130,6 +160,16 @@ export class SolarSystem {
 
       const bodyMesh: BodyMesh = { config, mesh };
 
+      // Sun corona: soft additive halo sprites around the disc
+      if (config.emissive) {
+        mesh.add(this.createCorona(radiusUnits));
+      }
+
+      // Atmosphere rim: fresnel shell for bodies configured with an atmosphere
+      if (config.atmosphereColor && !config.emissive) {
+        mesh.add(this.createAtmosphere(radiusUnits, config.atmosphereColor));
+      }
+
       // Rings (Saturn, Uranus, Neptune)
       if (config.hasRings && config.ringInnerRadiusKm && config.ringOuterRadiusKm) {
         const innerR = (config.ringInnerRadiusKm / KM_PER_UNIT) * RING_VISUAL_SCALE;
@@ -152,10 +192,12 @@ export class SolarSystem {
           side: THREE.DoubleSide,
           transparent: true,
           opacity: isNeptune ? 0.12 : 0.6,
+          depthWrite: false, // transparent rings must not punch holes in what's behind them
         });
         // Load ring texture if Saturn
         if (config.id === 'saturn') {
           this.textureLoader.load(`${import.meta.env.BASE_URL}textures/saturn_ring.png`, (texture) => {
+            this.prepColorTexture(texture);
             ringMat.map = texture;
             ringMat.color.set(0xffffff);
             ringMat.needsUpdate = true;
@@ -199,12 +241,18 @@ export class SolarSystem {
       const speed = 0.01 / Math.max(body.config.radiusKm / 10000, 1);
       body.mesh.rotation.y += speed * deltaTime;
     }
+    // Advance star twinkle
+    if (this.starMaterial) {
+      this.starTime += deltaTime;
+      this.starMaterial.uniforms.time.value = this.starTime;
+    }
   }
 
   /**
    * Toggle label visibility.
    */
   setLabelsVisible(visible: boolean): void {
+    this.labelsVisible = visible;
     for (const [, body] of this.bodyMeshes) {
       if (body.label) body.label.visible = visible;
     }
@@ -215,6 +263,7 @@ export class SolarSystem {
    * Call each frame with the camera position.
    */
   updateLabels(camera: THREE.PerspectiveCamera): void {
+    if (!this.labelsVisible) return; // labels default off — skip the per-body work
     const targetScreenFraction = 0.08; // labels occupy ~8% of screen height
     const fovRad = (camera.fov * Math.PI) / 180;
 
@@ -250,6 +299,96 @@ export class SolarSystem {
     if (!body) return null;
     const scale = body.config.type === 'star' ? SUN_VISUAL_SCALE : BODY_VISUAL_SCALE;
     return (body.config.radiusKm / KM_PER_UNIT) * scale;
+  }
+
+  /**
+   * Soft radial glow billboard around the Sun. Two layers: a tight warm core
+   * halo and a wide faint outer corona. Additive so it reads as light.
+   */
+  private createCorona(sunRadiusUnits: number): THREE.Group {
+    const group = new THREE.Group();
+
+    const makeHaloTexture = (innerStop: number, rgb: string): THREE.CanvasTexture => {
+      const size = 256;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d')!;
+      const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+      grad.addColorStop(0, `rgba(${rgb}, 1)`);
+      grad.addColorStop(innerStop, `rgba(${rgb}, 0.35)`);
+      grad.addColorStop((1 + innerStop) / 2, `rgba(${rgb}, 0.08)`); // long soft tail — hides the sprite's circular edge
+      grad.addColorStop(1, `rgba(${rgb}, 0)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, size, size);
+      return new THREE.CanvasTexture(canvas);
+    };
+
+    const layers: { tex: THREE.CanvasTexture; scale: number; opacity: number }[] = [
+      { tex: makeHaloTexture(0.25, '255, 235, 190'), scale: 3.2, opacity: 0.85 },
+      { tex: makeHaloTexture(0.15, '255, 190, 110'), scale: 7.0, opacity: 0.22 },
+    ];
+    for (const { tex, scale, opacity } of layers) {
+      const mat = new THREE.SpriteMaterial({
+        map: tex,
+        transparent: true,
+        opacity,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const sprite = new THREE.Sprite(mat);
+      const s = sunRadiusUnits * scale;
+      sprite.scale.set(s, s, 1);
+      group.add(sprite);
+    }
+    return group;
+  }
+
+  /**
+   * Fresnel atmosphere rim: a slightly larger shell that glows at the limb
+   * and fades to transparent face-on, weighted toward the sunlit side.
+   */
+  private createAtmosphere(bodyRadiusUnits: number, colorHex: string): THREE.Mesh {
+    const geometry = new THREE.SphereGeometry(bodyRadiusUnits * 1.04, 64, 32);
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        glowColor: { value: new THREE.Color(colorHex) },
+        intensity: { value: 0.9 },
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vViewDir;
+        varying vec3 vPosW;
+        void main() {
+          vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+          vNormal = normalize(normalMatrix * normal);
+          vViewDir = normalize(-mvPos.xyz);
+          vPosW = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * mvPos;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 glowColor;
+        uniform float intensity;
+        varying vec3 vNormal;
+        varying vec3 vViewDir;
+        varying vec3 vPosW;
+        void main() {
+          float rim = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewDir))), 3.0);
+          // Sun sits at the origin: fade the rim on the night side.
+          // vNormal is view-space, so rotate the world-space sun direction into view space.
+          vec3 sunDir = normalize(-vPosW);
+          float day = clamp(dot(normalize(vNormal), (viewMatrix * vec4(sunDir, 0.0)).xyz), -1.0, 1.0) * 0.5 + 0.5;
+          float glow = rim * intensity * (0.25 + 0.75 * day);
+          gl_FragColor = vec4(glowColor, glow);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.FrontSide,
+    });
+    return new THREE.Mesh(geometry, material);
   }
 
   private createLabel(text: string): THREE.Sprite {
@@ -322,11 +461,11 @@ export class SolarSystem {
     const base = import.meta.env.BASE_URL;
     // Load day texture
     this.textureLoader.load(`${base}textures/earth.jpg`, (texture) => {
-      mat.uniforms.dayMap.value = texture;
+      mat.uniforms.dayMap.value = this.prepColorTexture(texture);
     });
     // Load night texture
     this.textureLoader.load(`${base}textures/earth_night.jpg`, (texture) => {
-      mat.uniforms.nightMap.value = texture;
+      mat.uniforms.nightMap.value = this.prepColorTexture(texture);
     });
 
     return mat;
@@ -345,6 +484,7 @@ export class SolarSystem {
     this.textureLoader.load(
       `${import.meta.env.BASE_URL}textures/milkyway.jpg`,
       (texture) => {
+        this.prepColorTexture(texture);
         skyMat.map = texture;
         skyMat.color.set(0xffffff);
         skyMat.needsUpdate = true;
@@ -358,6 +498,105 @@ export class SolarSystem {
         skyMat.needsUpdate = true;
       }
     );
+
+    this.createPointStars();
+  }
+
+  /**
+   * Crisp point-sprite stars layered inside the skybox. The Milky Way texture
+   * alone goes soft when stretched across the sky; these keep the sky sharp.
+   * Fixed screen-size points with per-star size, tint, and a slow twinkle.
+   */
+  private createPointStars(): void {
+    const STAR_COUNT = 6000;
+    const radius = STARFIELD_RADIUS * 0.96;
+
+    // Weighted stellar palette: mostly white/blue-white, a few warm stars
+    const palette: { color: THREE.Color; weight: number }[] = [
+      { color: new THREE.Color('#cad8ff'), weight: 0.25 }, // blue-white
+      { color: new THREE.Color('#f8f7ff'), weight: 0.4 },  // white
+      { color: new THREE.Color('#fff4e8'), weight: 0.2 },  // yellow-white
+      { color: new THREE.Color('#ffd2a1'), weight: 0.1 },  // orange
+      { color: new THREE.Color('#ffb56b'), weight: 0.05 }, // red-orange
+    ];
+    const pickColor = (r: number): THREE.Color => {
+      let acc = 0;
+      for (const p of palette) {
+        acc += p.weight;
+        if (r <= acc) return p.color;
+      }
+      return palette[1].color;
+    };
+
+    const positions = new Float32Array(STAR_COUNT * 3);
+    const colors = new Float32Array(STAR_COUNT * 3);
+    const sizes = new Float32Array(STAR_COUNT);
+    const phases = new Float32Array(STAR_COUNT);
+
+    for (let i = 0; i < STAR_COUNT; i++) {
+      // Uniform distribution on a sphere
+      const u = Math.random() * 2 - 1;
+      const theta = Math.random() * Math.PI * 2;
+      const s = Math.sqrt(1 - u * u);
+      positions[i * 3] = radius * s * Math.cos(theta);
+      positions[i * 3 + 1] = radius * u;
+      positions[i * 3 + 2] = radius * s * Math.sin(theta);
+
+      const c = pickColor(Math.random());
+      // Brightness variation: many dim stars, few bright ones (power curve)
+      const brightness = 0.3 + 0.7 * Math.pow(Math.random(), 3);
+      colors[i * 3] = c.r * brightness;
+      colors[i * 3 + 1] = c.g * brightness;
+      colors[i * 3 + 2] = c.b * brightness;
+
+      sizes[i] = 1.0 + Math.pow(Math.random(), 4) * 3.0; // px; rare large stars
+      phases[i] = Math.random() * Math.PI * 2;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    geometry.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+
+    this.starMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0 },
+        pixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+      },
+      vertexShader: `
+        attribute float size;
+        attribute float phase;
+        uniform float time;
+        uniform float pixelRatio;
+        varying vec3 vColor;
+        varying float vTwinkle;
+        void main() {
+          vColor = color;
+          // Subtle slow twinkle, stronger on small stars
+          vTwinkle = 0.82 + 0.18 * sin(time * (0.5 + fract(phase) * 1.5) + phase * 7.0);
+          gl_PointSize = size * pixelRatio;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vColor;
+        varying float vTwinkle;
+        void main() {
+          float d = length(gl_PointCoord - vec2(0.5));
+          float alpha = smoothstep(0.5, 0.08, d);
+          gl_FragColor = vec4(vColor * vTwinkle, alpha);
+        }
+      `,
+      vertexColors: true,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    const stars = new THREE.Points(geometry, this.starMaterial);
+    stars.name = 'point-stars';
+    this.scene.add(stars);
   }
 
   getBodyCount(): number {

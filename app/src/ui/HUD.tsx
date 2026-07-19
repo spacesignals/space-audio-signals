@@ -151,6 +151,58 @@ const CSS = `
 }
 .zen-arc.show { opacity: 1; }
 
+/* ---------- time bar (bottom-left) ---------- */
+.zen-time {
+  position: absolute;
+  bottom: calc(36px + env(safe-area-inset-bottom, 0px));
+  left: calc(26px + env(safe-area-inset-left, 0px));
+  pointer-events: auto;
+}
+.zt-date {
+  font-size: 19px; font-weight: 300; letter-spacing: 4px;
+  text-transform: lowercase; color: var(--soft);
+  font-variant-numeric: tabular-nums;
+}
+.zt-clock {
+  font-family: system-ui, sans-serif;
+  font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--dim); margin-top: 3px; font-variant-numeric: tabular-nums;
+}
+.zt-controls {
+  display: flex; align-items: center; gap: 10px; margin-top: 8px;
+}
+.zt-btn {
+  background: none; border: 1px solid var(--faint); border-radius: 50%;
+  width: 22px; height: 22px; color: var(--dim); cursor: pointer;
+  font-family: system-ui, sans-serif; font-size: 12px; line-height: 1;
+  display: grid; place-items: center; padding: 0;
+  transition: color 0.4s, border-color 0.4s;
+}
+.zt-btn:hover { color: var(--text); border-color: var(--soft); }
+.zt-rate {
+  font-family: system-ui, sans-serif;
+  font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--soft); min-width: 68px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.zt-live {
+  display: flex; align-items: center; gap: 6px;
+  background: none; border: none; cursor: pointer;
+  font-family: system-ui, sans-serif;
+  font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--dim); padding: 4px 0; transition: color 0.4s;
+}
+.zt-live:hover { color: var(--text); }
+.zt-live .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--dim); transition: background 0.4s, box-shadow 0.4s;
+}
+.zt-live.on { color: var(--soft); cursor: default; }
+.zt-live.on .dot { background: #7fd8a0; box-shadow: 0 0 8px rgba(127, 216, 160, 0.7); }
+@media (max-width: 700px) {
+  .zen-time { bottom: calc(120px + env(safe-area-inset-bottom, 0px)); }
+}
+
 /* ---------- nav help (controls) ---------- */
 .zen-navhelp {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -233,6 +285,8 @@ interface HUDCallbacks {
   onTopView: () => void;
   onToggleLabels: (visible: boolean) => void;
   onToggleOrbits: (visible: boolean) => void;
+  onTimeStep: (dir: 1 | -1) => void;
+  onTimeLive: () => void;
   onToggleDebug: () => void;
   onToggleBackgroundAudio: (enabled: boolean) => void;
   onVolumeChange: (volume: number) => void;
@@ -246,6 +300,9 @@ interface HUDState {
   speedUnitsPerSec: number;
   selectedBody: CelestialBodyConfig | null;
   started: boolean;
+  simDate: Date | null;
+  timeRateLabel: string;
+  timeLive: boolean;
 }
 
 // Imperative state bridge: Preact reads from this, main.ts writes to it
@@ -255,6 +312,9 @@ let hudState: HUDState = {
   speedUnitsPerSec: 0,
   selectedBody: null,
   started: false,
+  simDate: null,
+  timeRateLabel: 'live',
+  timeLive: true,
 };
 let rerenderHUD: (() => void) | null = null;
 
@@ -404,6 +464,36 @@ function NavHelp() {
   );
 }
 
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+function TimeBar({ callbacks }: { callbacks: HUDCallbacks }) {
+  const s = hudState;
+  if (!s.simDate) return null;
+  const d = s.simDate;
+  const hours24 = d.getHours();
+  const h12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours24 < 12 ? 'am' : 'pm';
+  return (
+    <div class="zen-time">
+      <div class="zt-date">{MONTHS[d.getMonth()]} {d.getDate()}, {d.getFullYear()}</div>
+      <div class="zt-clock">{h12}:{mm} {ampm}</div>
+      <div class="zt-controls">
+        <button class="zt-btn" title="Slower / backwards" onClick={() => callbacks.onTimeStep(-1)}>−</button>
+        <span class="zt-rate">{s.timeRateLabel}</span>
+        <button class="zt-btn" title="Faster forwards" onClick={() => callbacks.onTimeStep(1)}>+</button>
+        <button
+          class={`zt-live${s.timeLive ? ' on' : ''}`}
+          onClick={() => { if (!s.timeLive) callbacks.onTimeLive(); }}
+        >
+          <span class="dot"></span>
+          live
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function StartOverlay({ onStart }: { onStart: () => void }) {
   return (
     <div class="zen-start" onClick={onStart}>
@@ -539,6 +629,8 @@ function HUDApp({
 
         {navHelp && <NavHelp />}
 
+        {s.started && <TimeBar callbacks={callbacks} />}
+
         <ArcLine menu={openMenu} count={openMenu ? menuItems[openMenu].length : 0} />
         <Constellation name="moons" items={moons} open={openMenu === 'moons'} onPick={pickBody} />
         <Constellation name="worlds" items={worlds} open={openMenu === 'worlds'} onPick={pickBody} />
@@ -629,6 +721,8 @@ export class HUD {
     onTopView: () => {},
     onToggleLabels: () => {},
     onToggleOrbits: () => {},
+    onTimeStep: () => {},
+    onTimeLive: () => {},
     onToggleDebug: () => {},
     onToggleBackgroundAudio: () => {},
     onVolumeChange: () => {},
@@ -664,6 +758,12 @@ export class HUD {
   /** Update distance readout and speed display in a single re-render. */
   updateTelemetry(nearestBody: string | null, distanceKm: number, speedUnitsPerSec: number): void {
     hudState = { ...hudState, nearestBody, distanceKm, speedUnitsPerSec };
+    rerenderHUD?.();
+  }
+
+  /** Update the sim-time readout (date, rate label, live state). */
+  updateTime(simDate: Date, timeRateLabel: string, timeLive: boolean): void {
+    hudState = { ...hudState, simDate, timeRateLabel, timeLive };
     rerenderHUD?.();
   }
 

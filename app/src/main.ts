@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { SolarSystem } from './engine/SolarSystem';
 import { OrbitLines } from './engine/OrbitLines';
 import { Ephemeris } from './engine/Ephemeris';
+import { SimClock } from './engine/SimClock';
 import { Navigation } from './engine/Navigation';
 import { PostProcessing } from './engine/PostProcessing';
 import { AudioEngine } from './audio/AudioEngine';
@@ -40,6 +41,7 @@ class App {
   private solarSystem: SolarSystem;
   private orbitLines: OrbitLines;
   private ephemeris: Ephemeris;
+  private simClock = new SimClock();
   private navigation: Navigation;
   private postProcessing: PostProcessing;
   private audioEngine: AudioEngine;
@@ -188,6 +190,8 @@ class App {
         this.navigation.startTour(waypointsFor(moonTourIds()), liveBodyPosition);
       },
       onTopView: () => this.navigation.flyToTopView(),
+      onTimeStep: (dir) => this.simClock.stepRate(dir),
+      onTimeLive: () => this.simClock.goLive(),
       onToggleLabels: (visible) => this.labels.setVisible(visible),
       onToggleOrbits: (visible) => this.orbitLines.setVisible(visible),
       onToggleDebug: () => this.perfMonitor.toggle(),
@@ -223,8 +227,11 @@ class App {
 
     this.adaptiveRes.tick(deltaTime);
 
-    // Update ephemeris (positions at 1Hz)
-    const positions = this.ephemeris.update(now);
+    // Advance simulation time (pinned to wall clock while live)
+    this.simClock.tick(deltaTime);
+
+    // Update ephemeris (astronomy bodies at 1Hz, or per-frame while scrubbing)
+    const positions = this.ephemeris.update(now, this.simClock.getSimMs());
 
     // Update 3D scene
     this.solarSystem.updatePositions(positions);
@@ -252,6 +259,7 @@ class App {
         [up.x, up.y, up.z]
       );
       this.audioEngine.setBodyPositions(positions);
+      this.audioEngine.setTimeDilation(!this.simClock.isLive());
       this.audioEngine.update(distances);
     }
 
@@ -313,6 +321,11 @@ class App {
       nearest ? nearest.config.name : null,
       nearest ? nearest.distanceKm : Infinity,
       this.navigation.getSpeed()
+    );
+    this.hud.updateTime(
+      this.simClock.getDate(),
+      this.simClock.getRateLabel(),
+      this.simClock.isLive()
     );
   }
 

@@ -41,6 +41,10 @@ export class Ephemeris {
   private positions: Map<string, [number, number, number]> = new Map();
   private lastUpdateTime = -Infinity;
   private updateIntervalMs = 1000; // astronomy-engine bodies update at 1Hz
+  private lastAstroSimMs = -Infinity;
+  // Also refresh astronomy bodies whenever SIM time has moved this much —
+  // during fast time scrubbing the 1Hz real-time gate would visibly jump.
+  private astroSimThresholdMs = 600_000; // 10 sim-minutes
 
   constructor() {
     // Sun is always at origin
@@ -55,14 +59,19 @@ export class Ephemeris {
    * moons and asteroids update EVERY frame: fast inner moons (Phobos orbits
    * in 7.7h) visibly jump at 1Hz when the camera is orbiting them up close.
    *
+   * @param now performance.now() — real time, gates the 1Hz astronomy update
+   * @param simMs simulation time in epoch ms (defaults to wall clock)
    * Returns positions in Three.js units.
    */
-  update(now: number): Map<string, [number, number, number]> {
-    if (now - this.lastUpdateTime >= this.updateIntervalMs) {
+  update(now: number, simMs: number = Date.now()): Map<string, [number, number, number]> {
+    const realDue = now - this.lastUpdateTime >= this.updateIntervalMs;
+    const simJumped = Math.abs(simMs - this.lastAstroSimMs) >= this.astroSimThresholdMs;
+    if (realDue || simJumped) {
       this.lastUpdateTime = now;
-      this.updateAstronomyBodies(new Date());
+      this.lastAstroSimMs = simMs;
+      this.updateAstronomyBodies(new Date(simMs));
     }
-    this.updateCircularOrbits(Date.now());
+    this.updateCircularOrbits(simMs);
     return this.positions;
   }
 

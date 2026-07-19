@@ -232,6 +232,7 @@ interface HUDCallbacks {
   onMoonTour: () => void;
   onTopView: () => void;
   onToggleLabels: (visible: boolean) => void;
+  onToggleOrbits: (visible: boolean) => void;
   onToggleDebug: () => void;
   onToggleBackgroundAudio: (enabled: boolean) => void;
   onVolumeChange: (volume: number) => void;
@@ -432,6 +433,7 @@ function HUDApp({
   const [openMenu, setOpenMenu] = useState<MenuName | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [labelsOn, setLabelsOn] = useState(false);
+  const [orbitsOn, setOrbitsOn] = useState(true);
   const [navHelp, setNavHelp] = useState(false);
   const [bgAudio, setBgAudio] = useState(true);
   const [debugOn, setDebugOn] = useState(false);
@@ -498,6 +500,11 @@ function HUDApp({
             const next = !labelsOn;
             setLabelsOn(next);
             callbacks.onToggleLabels(next);
+          }} />
+          <ZenCheck label="orbit lines" checked={orbitsOn} onToggle={() => {
+            const next = !orbitsOn;
+            setOrbitsOn(next);
+            callbacks.onToggleOrbits(next);
           }} />
           <ZenCheck label="controls" checked={navHelp} onToggle={() => setNavHelp(!navHelp)} />
           <ZenCheck label="background audio" checked={bgAudio} onToggle={() => {
@@ -621,6 +628,7 @@ export class HUD {
     onMoonTour: () => {},
     onTopView: () => {},
     onToggleLabels: () => {},
+    onToggleOrbits: () => {},
     onToggleDebug: () => {},
     onToggleBackgroundAudio: () => {},
     onVolumeChange: () => {},

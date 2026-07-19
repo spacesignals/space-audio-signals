@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SolarSystem } from './engine/SolarSystem';
+import { OrbitLines } from './engine/OrbitLines';
 import { Ephemeris } from './engine/Ephemeris';
 import { Navigation } from './engine/Navigation';
 import { PostProcessing } from './engine/PostProcessing';
@@ -36,6 +37,7 @@ class App {
   private camera: THREE.PerspectiveCamera;
 
   private solarSystem: SolarSystem;
+  private orbitLines: OrbitLines;
   private ephemeris: Ephemeris;
   private navigation: Navigation;
   private postProcessing: PostProcessing;
@@ -83,6 +85,7 @@ class App {
       this.renderer.capabilities.getMaxAnisotropy(),
       (texture) => this.renderer.initTexture(texture)
     );
+    this.orbitLines = new OrbitLines(this.scene);
     this.navigation = new Navigation(this.camera, this.renderer.domElement);
     this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera);
     this.audioEngine = new AudioEngine();
@@ -129,6 +132,10 @@ class App {
       setTimeout(() => loader.remove(), 500);
     }
     app.solarSystem.setLabelsVisible(false);
+    // Orbit lines: moons/asteroids are cheap circles (sync); planet paths are
+    // sampled from astronomy-engine in the background (chunked, non-blocking).
+    app.orbitLines.initMoonAndAsteroidOrbits();
+    void app.orbitLines.initPlanetOrbits();
     app.hud.initBodyList(BODIES);
     app.setup();
     return app;
@@ -187,6 +194,7 @@ class App {
       },
       onTopView: () => this.navigation.flyToTopView(),
       onToggleLabels: (visible) => this.solarSystem.setLabelsVisible(visible),
+      onToggleOrbits: (visible) => this.orbitLines.setVisible(visible),
       onToggleDebug: () => this.perfMonitor.toggle(),
       onVolumeChange: (volume) => this.audioEngine.setMasterVolume(volume),
       onBloomStrengthChange: (strength) => this.postProcessing.setBloomStrength(strength),
@@ -227,6 +235,7 @@ class App {
     this.solarSystem.updatePositions(positions);
     this.solarSystem.updateRotations(deltaTime);
     this.solarSystem.updateLabels(this.camera);
+    this.orbitLines.update(this.camera.position, positions);
 
     // Update camera
     this.navigation.update(deltaTime);

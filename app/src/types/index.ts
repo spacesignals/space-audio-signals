@@ -17,6 +17,7 @@ export interface CelestialBodyConfig {
   // Visual
   textureFile?: string; // relative to /textures/
   color?: string; // fallback hex color if no texture
+  identityColor?: string; // signature hue shared by orbit line, label, and HUD accent
   emissive?: boolean; // true for Sun
   hasRings?: boolean;
   ringInnerRadiusKm?: number;

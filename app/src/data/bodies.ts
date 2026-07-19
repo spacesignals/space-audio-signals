@@ -7,6 +7,7 @@ import type { CelestialBodyConfig } from '../types';
 export const BODIES: CelestialBodyConfig[] = [
   {
     id: 'sun',
+    identityColor: '#ffcf6b',
     name: 'Sun',
     type: 'star',
     radiusKm: 696_340,
@@ -21,6 +22,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'mercury',
+    identityColor: '#b39ddb',
     name: 'Mercury',
     type: 'planet',
     radiusKm: 2_439,
@@ -41,6 +43,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'venus',
+    identityColor: '#e8b84b',
     name: 'Venus',
     type: 'planet',
     radiusKm: 6_051,
@@ -54,6 +57,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'earth',
+    identityColor: '#4fc3f7',
     name: 'Earth',
     type: 'planet',
     radiusKm: 6_371,
@@ -67,6 +71,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'mars',
+    identityColor: '#e07a5f',
     name: 'Mars',
     type: 'planet',
     radiusKm: 3_389,
@@ -79,6 +84,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'jupiter',
+    identityColor: '#e8a87c',
     name: 'Jupiter',
     type: 'planet',
     radiusKm: 69_911,
@@ -92,6 +98,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'saturn',
+    identityColor: '#e6d9a8',
     name: 'Saturn',
     type: 'planet',
     radiusKm: 58_232,
@@ -108,6 +115,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'uranus',
+    identityColor: '#8fd3d3',
     name: 'Uranus',
     type: 'planet',
     radiusKm: 25_362,
@@ -124,6 +132,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'neptune',
+    identityColor: '#5b7fd4',
     name: 'Neptune',
     type: 'planet',
     radiusKm: 24_622,
@@ -138,6 +147,7 @@ export const BODIES: CelestialBodyConfig[] = [
   // --- Dwarf planet ---
   {
     id: 'pluto',
+    identityColor: '#c4b5a0',
     name: 'Pluto',
     type: 'dwarf-planet',
     radiusKm: 1_188,
@@ -153,6 +163,7 @@ export const BODIES: CelestialBodyConfig[] = [
   // --- Earth's Moon ---
   {
     id: 'moon',
+    identityColor: '#9fb6c4',
     name: 'Moon',
     type: 'moon',
     parentId: 'earth',
@@ -169,6 +180,7 @@ export const BODIES: CelestialBodyConfig[] = [
   // --- Jupiter's Galilean moons ---
   {
     id: 'io',
+    identityColor: '#d9b978',
     name: 'Io',
     type: 'moon',
     parentId: 'jupiter',
@@ -183,6 +195,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'europa',
+    identityColor: '#c9b391',
     name: 'Europa',
     type: 'moon',
     parentId: 'jupiter',
@@ -197,6 +210,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'ganymede',
+    identityColor: '#ab9c86',
     name: 'Ganymede',
     type: 'moon',
     parentId: 'jupiter',
@@ -211,6 +225,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'callisto',
+    identityColor: '#8f8272',
     name: 'Callisto',
     type: 'moon',
     parentId: 'jupiter',
@@ -227,6 +242,7 @@ export const BODIES: CelestialBodyConfig[] = [
   // --- Saturn's major moons ---
   {
     id: 'titan',
+    identityColor: '#dcb166',
     name: 'Titan',
     type: 'moon',
     parentId: 'saturn',
@@ -242,6 +258,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'enceladus',
+    identityColor: '#d8ddd8',
     name: 'Enceladus',
     type: 'moon',
     parentId: 'saturn',
@@ -256,6 +273,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'mimas',
+    identityColor: '#b8bcb8',
     name: 'Mimas',
     type: 'moon',
     parentId: 'saturn',
@@ -272,6 +290,7 @@ export const BODIES: CelestialBodyConfig[] = [
   // --- Uranus moons ---
   {
     id: 'titania',
+    identityColor: '#a2a2b2',
     name: 'Titania',
     type: 'moon',
     parentId: 'uranus',
@@ -285,6 +304,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'oberon',
+    identityColor: '#948c8c',
     name: 'Oberon',
     type: 'moon',
     parentId: 'uranus',
@@ -300,6 +320,7 @@ export const BODIES: CelestialBodyConfig[] = [
   // --- Neptune moon ---
   {
     id: 'triton',
+    identityColor: '#c0b2a2',
     name: 'Triton',
     type: 'moon',
     parentId: 'neptune',
@@ -316,6 +337,7 @@ export const BODIES: CelestialBodyConfig[] = [
   // --- Mars moons ---
   {
     id: 'phobos',
+    identityColor: '#a08a76',
     name: 'Phobos',
     type: 'moon',
     parentId: 'mars',
@@ -332,6 +354,7 @@ export const BODIES: CelestialBodyConfig[] = [
   // --- Additional Saturn moons ---
   {
     id: 'rhea',
+    identityColor: '#bcb8ae',
     name: 'Rhea',
     type: 'moon',
     parentId: 'saturn',
@@ -346,6 +369,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'dione',
+    identityColor: '#c4c0b6',
     name: 'Dione',
     type: 'moon',
     parentId: 'saturn',
@@ -360,6 +384,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'tethys',
+    identityColor: '#ccc8be',
     name: 'Tethys',
     type: 'moon',
     parentId: 'saturn',
@@ -374,6 +399,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'iapetus',
+    identityColor: '#96826e',
     name: 'Iapetus',
     type: 'moon',
     parentId: 'saturn',
@@ -390,6 +416,7 @@ export const BODIES: CelestialBodyConfig[] = [
   // --- Pluto moon ---
   {
     id: 'charon',
+    identityColor: '#9c9488',
     name: 'Charon',
     type: 'moon',
     parentId: 'pluto',
@@ -406,6 +433,7 @@ export const BODIES: CelestialBodyConfig[] = [
   // --- Dwarf planets & asteroids ---
   {
     id: 'ceres',
+    identityColor: '#a8a596',
     name: 'Ceres',
     type: 'dwarf-planet',
     radiusKm: 473,
@@ -419,6 +447,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'vesta',
+    identityColor: '#b3ab98',
     name: 'Vesta',
     type: 'dwarf-planet',
     radiusKm: 262,
@@ -432,6 +461,7 @@ export const BODIES: CelestialBodyConfig[] = [
   },
   {
     id: 'eros',
+    identityColor: '#a89078',
     name: 'Eros',
     type: 'dwarf-planet',
     radiusKm: 8,

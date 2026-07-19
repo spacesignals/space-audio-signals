@@ -327,6 +327,14 @@ class App {
       this.simClock.getRateLabel(),
       this.simClock.isLive()
     );
+    // Live mix readout for the open info panel
+    const selectedId = this.hud.getSelectedBodyId();
+    if (selectedId) {
+      this.hud.updateMix(
+        this.audioEngine.getBodyMix(selectedId),
+        this.audioEngine.getDroneLevel()
+      );
+    }
   }
 
   private onResize(): void {

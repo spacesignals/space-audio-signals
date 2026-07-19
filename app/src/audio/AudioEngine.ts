@@ -541,6 +541,32 @@ export class AudioEngine {
     }
   }
 
+  /**
+   * Live mix readout for a body: one row per loaded stem with its CURRENT
+   * gain (the value the audio thread is actually at, mid-crossfade included).
+   * Used by the info panel — "what you're hearing and why".
+   */
+  getBodyMix(bodyId: string): { label: string; gain: number }[] {
+    const rows: { label: string; gain: number }[] = [];
+    for (const [, stem] of this.stems) {
+      if (stem.bodyId !== bodyId || !stem.gainNode) continue;
+      // 'mercury/3FreudianPad.m4a' -> '3freudianpad'; delay layers marked
+      const file = stem.url.split('/').pop() ?? stem.url;
+      const base = file.replace(/\.[a-z0-9]+$/i, '').toLowerCase();
+      rows.push({
+        label: stem.isDelayed ? `${base} (late)` : base,
+        gain: stem.gainNode.gain.value,
+      });
+    }
+    rows.sort((a, b) => a.label.localeCompare(b.label));
+    return rows;
+  }
+
+  /** Current deep-space drone level (0..DEEP_SPACE_DRONE_MAX_GAIN). */
+  getDroneLevel(): number {
+    return this.droneGain?.gain.value ?? 0;
+  }
+
   getActiveStems(): number {
     let count = 0;
     for (const [, stem] of this.stems) {

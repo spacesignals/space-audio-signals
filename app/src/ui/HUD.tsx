@@ -2,6 +2,8 @@ import { render } from 'preact';
 import { useState, useCallback, useEffect } from 'preact/hooks';
 import type { CelestialBodyConfig } from '../types';
 import { formatDistance, formatSpeed } from './format';
+import { FACTS } from '../data/facts';
+import { DEEP_SPACE_DRONE_MAX_GAIN } from '../data/constants';
 
 /*
  * Zen Drift HUD — minimal, serif, nearly chromeless.
@@ -62,13 +64,14 @@ const CSS = `
   box-shadow: 0 0 8px rgba(240, 238, 232, 0.6);
 }
 
-/* ---------- top-right: live body info ---------- */
+/* ---------- top-right: live body info panel ---------- */
 .zen-info {
   position: absolute;
   top: calc(22px + env(safe-area-inset-top, 0px));
   right: calc(26px + env(safe-area-inset-right, 0px));
-  text-align: right; pointer-events: none; max-width: 260px;
+  text-align: right; pointer-events: none; max-width: 280px;
 }
+.zen-info .panel { pointer-events: auto; }
 .zi-name {
   font-size: 26px; font-weight: 300; letter-spacing: 8px;
   text-transform: lowercase;
@@ -79,6 +82,50 @@ const CSS = `
   color: var(--dim); margin-top: 6px; font-variant-numeric: tabular-nums;
 }
 .zi-row.live { color: var(--soft); }
+.zi-tagline {
+  font-style: italic; font-size: 14px; letter-spacing: 1px;
+  color: var(--soft); margin-top: 10px;
+}
+.zi-fact {
+  font-size: 12.5px; letter-spacing: 0.5px; line-height: 1.5;
+  color: var(--dim); margin-top: 9px;
+}
+.zi-stat {
+  font-family: system-ui, sans-serif;
+  font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--dim); margin-top: 5px; font-variant-numeric: tabular-nums;
+}
+.zi-stat b { color: var(--soft); font-weight: 400; margin-left: 8px; }
+.zi-mix-title {
+  font-family: system-ui, sans-serif;
+  font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--faint); margin-top: 16px;
+}
+.zi-mix-row {
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  margin-top: 6px;
+}
+.zi-mix-row .lbl {
+  font-family: system-ui, sans-serif;
+  font-size: 9px; letter-spacing: 1.5px; text-transform: lowercase;
+  color: var(--dim); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 150px;
+}
+.zi-mix-row .bar {
+  width: 74px; height: 2px; background: var(--faint);
+  border-radius: 1px; overflow: hidden; flex-shrink: 0;
+}
+.zi-mix-row .bar .fill {
+  height: 100%; background: var(--soft);
+  transition: width 0.25s linear;
+}
+.zi-close {
+  background: none; border: none; cursor: pointer;
+  font-family: system-ui, sans-serif;
+  font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--faint); padding: 10px 0 0 0; transition: color 0.4s;
+}
+.zi-close:hover { color: var(--text); }
 @media (max-width: 700px) {
   /* below the corner toggles so the two blocks never collide */
   .zen-info { top: calc(210px + env(safe-area-inset-top, 0px)); }
@@ -303,6 +350,8 @@ interface HUDState {
   simDate: Date | null;
   timeRateLabel: string;
   timeLive: boolean;
+  mix: { label: string; gain: number }[];
+  droneLevel: number;
 }
 
 // Imperative state bridge: Preact reads from this, main.ts writes to it
@@ -315,6 +364,8 @@ let hudState: HUDState = {
   simDate: null,
   timeRateLabel: 'live',
   timeLive: true,
+  mix: [],
+  droneLevel: 0,
 };
 let rerenderHUD: (() => void) | null = null;
 
@@ -609,14 +660,58 @@ function HUDApp({
         </div>
 
         <div class="zen-info">
-          {s.selectedBody && (
-            <>
-              <div class="zi-name">{s.selectedBody.name.toLowerCase()}</div>
-              <div class="zi-row">{s.selectedBody.type.replace('-', ' ')}</div>
-              <div class="zi-row">radius {s.selectedBody.radiusKm.toLocaleString()} km</div>
-              <div class="zi-row">{s.selectedBody.stems.length} audio stems</div>
-            </>
-          )}
+          {s.selectedBody && (() => {
+            const body = s.selectedBody;
+            const facts = FACTS[body.id];
+            const hasStems = body.stems.length + (body.delayedStems?.length ?? 0) > 0;
+            return (
+              <div class="panel">
+                <div class="zi-name" style={{ color: body.identityColor ?? 'var(--text)' }}>
+                  {body.name.toLowerCase()}
+                </div>
+                <div class="zi-row">{body.type.replace('-', ' ')} · radius {body.radiusKm.toLocaleString()} km</div>
+                {facts && <div class="zi-tagline">{facts.tagline}</div>}
+                {facts?.factoids.map((f) => <div class="zi-fact">{f}</div>)}
+                {facts?.stats?.map((st) => (
+                  <div class="zi-stat">{st.label}<b>{st.value}</b></div>
+                ))}
+                <div class="zi-mix-title">now playing</div>
+                {hasStems && s.mix.length === 0 && (
+                  <div class="zi-mix-row"><span class="lbl">stems loading…</span></div>
+                )}
+                {!hasStems && (
+                  <div class="zi-mix-row"><span class="lbl">awaiting composition</span></div>
+                )}
+                {s.mix.map((m) => (
+                  <div class="zi-mix-row">
+                    <span class="lbl">{m.label}</span>
+                    <span class="bar">
+                      <span
+                        class="fill"
+                        style={{ width: `${Math.min(100, Math.round((m.gain / Math.max(body.maxGain, 0.01)) * 100))}%` }}
+                      ></span>
+                    </span>
+                  </div>
+                ))}
+                <div class="zi-mix-row">
+                  <span class="lbl">deep space drone</span>
+                  <span class="bar">
+                    <span
+                      class="fill"
+                      style={{ width: `${Math.min(100, Math.round((s.droneLevel / DEEP_SPACE_DRONE_MAX_GAIN) * 100))}%` }}
+                    ></span>
+                  </span>
+                </div>
+                <button
+                  class="zi-close"
+                  onClick={() => {
+                    hudState = { ...hudState, selectedBody: null };
+                    rerenderHUD?.();
+                  }}
+                >close</button>
+              </div>
+            );
+          })()}
           {s.started && (
             <div class="zi-row live">
               {s.nearestBody
@@ -765,6 +860,17 @@ export class HUD {
   updateTime(simDate: Date, timeRateLabel: string, timeLive: boolean): void {
     hudState = { ...hudState, simDate, timeRateLabel, timeLive };
     rerenderHUD?.();
+  }
+
+  /** Live audio mix for the selected body's info panel. */
+  updateMix(mix: { label: string; gain: number }[], droneLevel: number): void {
+    hudState = { ...hudState, mix, droneLevel };
+    rerenderHUD?.();
+  }
+
+  /** Body id of the open info panel, or null. */
+  getSelectedBodyId(): string | null {
+    return hudState.selectedBody?.id ?? null;
   }
 
   showBodyInfo(body: CelestialBodyConfig): void {

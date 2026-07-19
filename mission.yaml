@@ -1,0 +1,52 @@
+# Mission Control manifest — read by the dashboard (C:\claude\dashboard)
+label: Galaxy Music
+description: Solar system explorer where navigation drives ambient music (Three.js + Web Audio)
+
+links:
+  - {label: Live site, url: "https://www.spacesignals.net/galaxy/"}
+
+actions:
+  - key: build
+    label: Build package
+    cmd: ["cmd", "/c", "deploy.bat"]
+    timeout: 900
+    icon: box-seam
+
+  - key: upload
+    label: Upload live
+    cmd: ["python", "upload.py"]
+    timeout: 1800
+    confirm: true
+    icon: cloud-upload
+
+  - key: upload_dry
+    label: Upload (dry run)
+    cmd: ["python", "upload.py", "--dry-run"]
+    timeout: 300
+    icon: cloud-check
+
+  - key: sync_stems
+    label: Sync audio stems
+    cmd: ["python", "up-audio.py"]
+    timeout: 120
+    icon: music-note-list
+
+  - key: dev
+    label: Start dev server
+    cmd: ["cmd", "/c", "start.bat"]
+    detach: true
+    icon: play-circle
+
+  - key: stop_dev
+    label: Stop dev server
+    cmd: ["cmd", "/c", "stop.bat"]
+    timeout: 60
+    icon: stop-circle
+
+  - key: typecheck
+    label: Type check
+    cmd: ["cmd", "/c", "cd app && npx tsc --noEmit"]
+    timeout: 300
+    icon: check2-square
+
+docs: [CLAUDE.md, PROGRESS.md, TODOS.md, DESIGN.md, MOBILE.md, CHANGELOG.md]

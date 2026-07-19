@@ -8,6 +8,8 @@ import {
   STEM_RETRY_COOLDOWN_MS,
   STEM_MAX_RETRIES,
   STEM_EVICTION_DELAY_MS,
+  STEM_DELAY_SECONDS,
+  DELAYED_STEM_FADE_IN_TIME_CONSTANT,
 } from '../data/constants';
 
 /**
@@ -35,6 +37,11 @@ export class AudioEngine {
 
   // Last gain target per stem — skip rescheduling when target hasn't changed meaningfully
   private scheduledGains: Map<string, number> = new Map();
+
+  // Arrival tracking for delayed stems: ctx.currentTime when a body most recently became
+  // audible, and the set of bodies currently audible (to detect the not-audible -> audible edge).
+  private bodyArrivalTime: Map<string, number> = new Map();
+  private audibleBodies: Set<string> = new Set();
 
   /**
    * Must be called from a user gesture (click/tap) due to browser autoplay policy.
@@ -218,10 +225,23 @@ export class AudioEngine {
         this.ensureStemsLoaded(config);
       }
 
-      if (distanceKm < config.audibilityRadiusKm && stemBudget > 0) {
+      // Arrival edge detection: (re)start the delay-layer countdown each time a body
+      // transitions from not-audible to audible, so leaving and coming back resets it.
+      const isAudible = distanceKm < config.audibilityRadiusKm;
+      if (isAudible && !this.audibleBodies.has(bodyId)) {
+        this.audibleBodies.add(bodyId);
+        this.bodyArrivalTime.set(bodyId, this.ctx.currentTime);
+      } else if (!isAudible && this.audibleBodies.has(bodyId)) {
+        this.audibleBodies.delete(bodyId);
+      }
+      this.startDueDelayedStems(bodyId);
+
+      if (isAudible && stemBudget > 0) {
         const targetGain = this.calculateGain(distanceKm, config);
         this.setStemGains(bodyId, targetGain);
-        if (targetGain > 0.001) stemBudget -= config.stems.length;
+        if (targetGain > 0.001) {
+          stemBudget -= config.stems.length + (config.delayedStems?.length ?? 0);
+        }
       } else {
         this.setStemGains(bodyId, 0);
       }
@@ -294,7 +314,12 @@ export class AudioEngine {
 
     const now = performance.now();
 
-    for (const url of config.stems) {
+    const entries: { url: string; isDelayed: boolean }[] = [
+      ...config.stems.map((url) => ({ url, isDelayed: false })),
+      ...(config.delayedStems ?? []).map((url) => ({ url, isDelayed: true })),
+    ];
+
+    for (const { url, isDelayed } of entries) {
       const stemId = `${config.id}:${url}`;
       const existing = this.stems.get(stemId);
 
@@ -335,6 +360,8 @@ export class AudioEngine {
         lastActiveTime: now,
         failedAt: 0,
         retryCount: 0,
+        isDelayed,
+        started: false,
       };
       this.stems.set(stemId, stem);
 
@@ -378,20 +405,65 @@ export class AudioEngine {
       stem.pannerNode.connect(stem.gainNode);
       stem.gainNode.connect(this.masterGain);
 
-      // Create and start looping source
-      const source = this.ctx.createBufferSource();
-      source.buffer = stem.buffer;
-      source.loop = true;
-      source.connect(stem.pannerNode);
-      source.start();
-      stem.source = source;
-
-      stem.state = 'ready';
+      // Delayed stems (from a body's delay/ folder) don't start playing yet — their
+      // BufferSource is created later by startDueDelayedStems() once the countdown
+      // elapses. Decoding eagerly here just hides that latency ahead of time.
+      if (stem.isDelayed) {
+        stem.state = 'ready';
+      } else {
+        // Create and start looping source
+        const source = this.ctx.createBufferSource();
+        source.buffer = stem.buffer;
+        source.loop = true;
+        source.connect(stem.pannerNode);
+        source.start();
+        stem.source = source;
+        stem.started = true;
+        stem.state = 'ready';
+      }
     } catch (err) {
       console.warn(`Stem decode failed for ${stem.url}:`, err);
       stem.state = 'failed';
       stem.failedAt = performance.now();
     }
+  }
+
+  /**
+   * Start any delay-layer stems for a body whose STEM_DELAY_SECONDS countdown has elapsed
+   * since arrival. Called every frame; no-ops until there's something due.
+   */
+  private startDueDelayedStems(bodyId: string): void {
+    if (!this.ctx) return;
+    const arrivalTime = this.bodyArrivalTime.get(bodyId);
+    if (arrivalTime === undefined) return;
+    if (this.ctx.currentTime - arrivalTime < STEM_DELAY_SECONDS) return;
+
+    for (const [, stem] of this.stems) {
+      if (stem.bodyId !== bodyId || !stem.isDelayed || stem.started || stem.state !== 'ready') continue;
+      this.startDelayedStemSource(stem);
+    }
+  }
+
+  /**
+   * Create and start the BufferSource for a delayed stem, fading in from silence so the
+   * layer joining mid-orbit doesn't pop in at whatever gain the body is currently mixed at.
+   */
+  private startDelayedStemSource(stem: AudioStem): void {
+    if (!this.ctx || !stem.buffer || !stem.pannerNode || !stem.gainNode) return;
+
+    const source = this.ctx.createBufferSource();
+    source.buffer = stem.buffer;
+    source.loop = true;
+    source.connect(stem.pannerNode);
+    source.start();
+    stem.source = source;
+    stem.started = true;
+
+    const now = this.ctx.currentTime;
+    const target = this.scheduledGains.get(stem.id) ?? 0;
+    stem.gainNode.gain.cancelScheduledValues(now);
+    stem.gainNode.gain.setValueAtTime(0, now);
+    stem.gainNode.gain.setTargetAtTime(target, now, DELAYED_STEM_FADE_IN_TIME_CONSTANT);
   }
 
   /**

@@ -14,6 +14,7 @@ export const BODIES: CelestialBodyConfig[] = [
     maxGain: 0.6,
     gainCurve: 'logarithmic',
     stems: ['sun/drone-01.m4a', 'sun/texture-01.m4a'],
+    delayedStems: [],
     textureFile: 'sun.jpg',
     emissive: true,
     color: '#FDB813',

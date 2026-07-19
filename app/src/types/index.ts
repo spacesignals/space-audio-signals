@@ -11,6 +11,8 @@ export interface CelestialBodyConfig {
   maxGain: number;
   gainCurve: 'logarithmic' | 'linear' | 'inverse-square';
   stems: string[]; // file paths relative to /audio/
+  delayedStems?: string[]; // file paths relative to /audio/, e.g. 'sun/delay/second-layer.m4a' —
+  // starts STEM_DELAY_SECONDS after the body becomes audible, then fades in (see AudioEngine)
   pool?: string; // shared audio pool name if no unique stems
   // Visual
   textureFile?: string; // relative to /textures/
@@ -34,6 +36,8 @@ export interface AudioStem {
   lastActiveTime: number; // performance.now() when gain was last > 0
   failedAt: number; // performance.now() when last failure occurred
   retryCount: number; // number of retry attempts after first failure
+  isDelayed: boolean; // true if this stem came from a body's delay/ folder
+  started: boolean; // true once the BufferSource has been created and started
 }
 
 /** Pre-computed distance from camera to a body, shared across systems. */

@@ -11,19 +11,26 @@ AUDIO_EXTS = {".m4a", ".mp3", ".ogg", ".wav", ".webm"}
 
 
 def scan_audio_files():
-    """Return dict of folder -> sorted list of relative paths (e.g. 'sun/drone-01.m4a')."""
+    """Return dict of folder -> sorted list of relative paths (e.g. 'sun/drone-01.m4a').
+
+    A body's `delay/` subfolder (e.g. 'sun/delay/second-layer.m4a') is bucketed under its
+    own key ('sun/delay') rather than folded into the body's regular stems, so it maps to
+    the separate `delayedStems` field in bodies.ts instead of `stems`.
+    """
     files_by_folder = {}
     for root, _, files in os.walk(AUDIO_DIR):
         rel_root = Path(root).relative_to(AUDIO_DIR).as_posix()
         if rel_root == ".":
             continue
+        parts = rel_root.split("/")
+        top_folder = parts[0]
         for f in sorted(files):
             if Path(f).suffix.lower() in AUDIO_EXTS:
                 rel_path = f"{rel_root}/{f}"
-                top_folder = rel_root.split("/")[0]
-                # Pool stems go under their full pool path key
                 if top_folder == "pools":
                     key = rel_root  # e.g. "pools/icy-moon"
+                elif len(parts) == 2 and parts[1] == "delay":
+                    key = f"{top_folder}/delay"  # e.g. "sun/delay"
                 else:
                     key = top_folder  # e.g. "sun"
                 files_by_folder.setdefault(key, []).append(rel_path)
@@ -67,22 +74,50 @@ def update_bodies_ts(disk_files):
             re.DOTALL,
         )
         m = pattern.search(source)
-        if not m:
-            continue
+        if m:
+            current_stems = parse_string_array(m.group(3))
+            if sorted(current_stems) != disk_stems:
+                new_arr = format_string_array(disk_stems)
+                new_frag = m.group(2) + new_arr
 
-        current_stems = parse_string_array(m.group(3))
-        if sorted(current_stems) == disk_stems:
-            continue
+                for f in sorted(set(disk_stems) - set(current_stems)):
+                    changes.append(f"  + {body_id}: {f}")
+                for f in sorted(set(current_stems) - set(disk_stems)):
+                    changes.append(f"  - {body_id}: {f}")
 
-        new_arr = format_string_array(disk_stems)
-        new_frag = m.group(2) + new_arr
+                source = source[: m.start(2)] + new_frag + source[m.end(3) :]
 
-        for f in sorted(set(disk_stems) - set(current_stems)):
-            changes.append(f"  + {body_id}: {f}")
-        for f in sorted(set(current_stems) - set(disk_stems)):
-            changes.append(f"  - {body_id}: {f}")
-
-        source = source[: m.start(2)] + new_frag + source[m.end(3) :]
+        # Delayed stems (this body's delay/ folder) -> the delayedStems field
+        disk_delayed = sorted(disk_files.get(f"{body_id}/delay", []))
+        delayed_pattern = re.compile(
+            r"(id:\s*'" + re.escape(body_id) + r"'.*?)(delayedStems:\s*)(\[[^\]]*\])",
+            re.DOTALL,
+        )
+        dm = delayed_pattern.search(source)
+        if dm:
+            current_delayed = parse_string_array(dm.group(3))
+            if sorted(current_delayed) != disk_delayed:
+                new_delayed_arr = format_string_array(disk_delayed)
+                new_delayed_frag = dm.group(2) + new_delayed_arr
+                for f in sorted(set(disk_delayed) - set(current_delayed)):
+                    changes.append(f"  + {body_id} (delay): {f}")
+                for f in sorted(set(current_delayed) - set(disk_delayed)):
+                    changes.append(f"  - {body_id} (delay): {f}")
+                source = source[: dm.start(2)] + new_delayed_frag + source[dm.end(3) :]
+        elif disk_delayed:
+            # Field doesn't exist yet but there are files on disk — insert it right after
+            # this body's stems array.
+            insert_pattern = re.compile(
+                r"(id:\s*'" + re.escape(body_id) + r"'.*?stems:\s*\[[^\]]*\],?)",
+                re.DOTALL,
+            )
+            im = insert_pattern.search(source)
+            if im:
+                new_delayed_arr = format_string_array(disk_delayed)
+                insertion = f"\n    delayedStems: {new_delayed_arr},"
+                source = source[: im.end(1)] + insertion + source[im.end(1) :]
+                for f in sorted(disk_delayed):
+                    changes.append(f"  + {body_id} (delay): {f}")
 
     # Update AUDIO_POOLS
     pool_pattern = re.compile(

@@ -37,6 +37,8 @@ export const DRONE_CROSSFADE_TIME_CONSTANT = 1.5; // seconds — slower crossfad
 export const STEM_RETRY_COOLDOWN_MS = 60_000; // wait 60s before retrying a failed stem
 export const STEM_MAX_RETRIES = 1; // retry once after cooldown, then permanently fail
 export const STEM_EVICTION_DELAY_MS = 30_000; // evict silent stems after 30s
+export const STEM_DELAY_SECONDS = 60; // delay/ layer starts this many seconds after a body becomes audible
+export const DELAYED_STEM_FADE_IN_TIME_CONSTANT = 1.5; // seconds — fade-in when a delayed stem's source starts, avoids a pop
 
 // Starfield
 export const STARFIELD_RADIUS = 50_000; // units

@@ -6,6 +6,7 @@ import { Navigation } from './engine/Navigation';
 import { PostProcessing } from './engine/PostProcessing';
 import { AudioEngine } from './audio/AudioEngine';
 import { HUD } from './ui/HUD.tsx';
+import { Labels } from './ui/Labels';
 import { PerformanceMonitor } from './engine/PerformanceMonitor';
 import { AdaptiveResolution } from './engine/AdaptiveResolution';
 import { BODIES, MOON_ORBITS } from './data/bodies';
@@ -43,6 +44,7 @@ class App {
   private postProcessing: PostProcessing;
   private audioEngine: AudioEngine;
   private hud: HUD;
+  private labels: Labels;
   private perfMonitor: PerformanceMonitor;
 
   private clock = new THREE.Clock();
@@ -90,6 +92,7 @@ class App {
     this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera);
     this.audioEngine = new AudioEngine();
     this.hud = new HUD();
+    this.labels = new Labels((bodyId) => this.focusBody(bodyId));
     this.perfMonitor = new PerformanceMonitor();
 
     // Dynamic render-scale: steps resolution down on weak GPUs (phones), back up with headroom
@@ -131,11 +134,11 @@ class App {
       loader.style.opacity = '0';
       setTimeout(() => loader.remove(), 500);
     }
-    app.solarSystem.setLabelsVisible(false);
     // Orbit lines: moons/asteroids are cheap circles (sync); planet paths are
     // sampled from astronomy-engine in the background (chunked, non-blocking).
     app.orbitLines.initMoonAndAsteroidOrbits();
     void app.orbitLines.initPlanetOrbits();
+    app.labels.init(BODIES);
     app.hud.initBodyList(BODIES);
     app.setup();
     return app;
@@ -173,15 +176,7 @@ class App {
     let backgroundAudioEnabled = true;
 
     this.hud.setCallbacks({
-      onBodySelect: (bodyId) => {
-        const pos = this.solarSystem.getBodyPosition(bodyId);
-        if (pos) {
-          const visualRadius = this.solarSystem.getBodyVisualRadius(bodyId) ?? undefined;
-          this.navigation.flyTo(pos, visualRadius);
-          const body = BODIES.find(b => b.id === bodyId);
-          if (body) this.hud.showBodyInfo(body);
-        }
-      },
+      onBodySelect: (bodyId) => this.focusBody(bodyId),
       onStart: () => {
         this.audioEngine.init();
         this.running = true;
@@ -193,7 +188,7 @@ class App {
         this.navigation.startTour(waypointsFor(moonTourIds()), liveBodyPosition);
       },
       onTopView: () => this.navigation.flyToTopView(),
-      onToggleLabels: (visible) => this.solarSystem.setLabelsVisible(visible),
+      onToggleLabels: (visible) => this.labels.setVisible(visible),
       onToggleOrbits: (visible) => this.orbitLines.setVisible(visible),
       onToggleDebug: () => this.perfMonitor.toggle(),
       onVolumeChange: (volume) => this.audioEngine.setMasterVolume(volume),
@@ -234,8 +229,8 @@ class App {
     // Update 3D scene
     this.solarSystem.updatePositions(positions);
     this.solarSystem.updateRotations(deltaTime);
-    this.solarSystem.updateLabels(this.camera);
     this.orbitLines.update(this.camera.position, positions);
+    this.labels.update(this.camera, positions);
 
     // Update camera
     this.navigation.update(deltaTime);
@@ -280,6 +275,16 @@ class App {
     });
     this.perfMonitor.endFrame();
   };
+
+  /** Fly to a body and surface its info — shared by HUD menus and 3D label clicks. */
+  private focusBody(bodyId: string): void {
+    const pos = this.solarSystem.getBodyPosition(bodyId);
+    if (!pos) return;
+    const visualRadius = this.solarSystem.getBodyVisualRadius(bodyId) ?? undefined;
+    this.navigation.flyTo(pos, visualRadius);
+    const body = BODIES.find(b => b.id === bodyId);
+    if (body) this.hud.showBodyInfo(body);
+  }
 
   /** Compute sorted distances from camera to all bodies. Shared by audio + HUD. */
   private computeDistances(positions: Map<string, [number, number, number]>): BodyDistance[] {

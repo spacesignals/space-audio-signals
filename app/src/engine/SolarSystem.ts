@@ -13,7 +13,6 @@ interface BodyMesh {
   config: CelestialBodyConfig;
   mesh: THREE.Mesh;
   rings?: THREE.Mesh;
-  label?: THREE.Sprite;
 }
 
 /**
@@ -24,9 +23,7 @@ export class SolarSystem {
   private bodyMeshes: Map<string, BodyMesh> = new Map();
   private textureLoader = new THREE.TextureLoader();
   private sunLight: THREE.PointLight;
-  private _labelWorldPos = new THREE.Vector3(); // reusable for updateLabels
   private maxAnisotropy: number;
-  private labelsVisible = true;
   private starTime = 0;
   private starMaterial: THREE.ShaderMaterial | null = null;
 
@@ -209,12 +206,6 @@ export class SolarSystem {
         bodyMesh.rings = ringMesh;
       }
 
-      // Text label (Three.js sprite) — positioned above body, scaled per-frame for constant screen size
-      const label = this.createLabel(config.name);
-      label.position.set(0, radiusUnits * 1.3, 0);
-      mesh.add(label);
-      bodyMesh.label = label;
-
       this.bodyMeshes.set(config.id, bodyMesh);
     }
   }
@@ -245,44 +236,6 @@ export class SolarSystem {
     if (this.starMaterial) {
       this.starTime += deltaTime;
       this.starMaterial.uniforms.time.value = this.starTime;
-    }
-  }
-
-  /**
-   * Toggle label visibility.
-   */
-  setLabelsVisible(visible: boolean): void {
-    this.labelsVisible = visible;
-    for (const [, body] of this.bodyMeshes) {
-      if (body.label) body.label.visible = visible;
-    }
-  }
-
-  /**
-   * Update label scales so they appear the same size on screen regardless of distance.
-   * Call each frame with the camera position.
-   */
-  updateLabels(camera: THREE.PerspectiveCamera): void {
-    if (!this.labelsVisible) return; // labels default off — skip the per-body work
-    const targetScreenFraction = 0.08; // labels occupy ~8% of screen height
-    const fovRad = (camera.fov * Math.PI) / 180;
-
-    for (const [, body] of this.bodyMeshes) {
-      if (!body.label) continue;
-
-      // World position of the label (reuse pre-allocated vector)
-      body.label.getWorldPosition(this._labelWorldPos);
-      const dist = camera.position.distanceTo(this._labelWorldPos);
-
-      // Size in world units needed to subtend targetScreenFraction of viewport
-      const worldSize = 2 * dist * Math.tan(fovRad / 2) * targetScreenFraction;
-      const scale = Math.max(worldSize, 0.01);
-      body.label.scale.set(scale * 4, scale, 1); // 4:1 aspect ratio for text
-
-      // Adjust label vertical offset based on body visual radius so it's always above the body
-      const bodyScale = body.config.type === 'star' ? SUN_VISUAL_SCALE : BODY_VISUAL_SCALE;
-      const radiusUnits = (body.config.radiusKm / KM_PER_UNIT) * bodyScale;
-      body.label.position.set(0, radiusUnits + scale * 0.6, 0);
     }
   }
 
@@ -389,28 +342,6 @@ export class SolarSystem {
       side: THREE.FrontSide,
     });
     return new THREE.Mesh(geometry, material);
-  }
-
-  private createLabel(text: string): THREE.Sprite {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d')!;
-    ctx.font = '100 24px system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, 128, 32);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    const material = new THREE.SpriteMaterial({
-      map: texture,
-      transparent: true,
-      depthTest: true,
-    });
-    const sprite = new THREE.Sprite(material);
-    sprite.scale.set(2, 0.5, 1);
-    return sprite;
   }
 
   private createEarthMaterial(): THREE.ShaderMaterial {

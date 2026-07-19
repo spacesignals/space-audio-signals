@@ -432,7 +432,7 @@ function HUDApp({
   const [, setTick] = useState(0);
   const [openMenu, setOpenMenu] = useState<MenuName | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [labelsOn, setLabelsOn] = useState(false);
+  const [labelsOn, setLabelsOn] = useState(true);
   const [orbitsOn, setOrbitsOn] = useState(true);
   const [navHelp, setNavHelp] = useState(false);
   const [bgAudio, setBgAudio] = useState(true);

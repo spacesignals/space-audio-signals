@@ -507,5 +507,7 @@ export const ASTEROID_ORBITS: Record<string, { semiMajorAxisAU: number; periodDa
 
 // Shared audio pools for Phase 2+ bodies without unique stems
 export const AUDIO_POOLS: Record<string, string[]> = {
-
+  // belt: sparse granular/dust texture zone for the asteroid + kuiper belts
+  // (BeltField regions) — populate with real stems when composed
+  belt: [],
 };

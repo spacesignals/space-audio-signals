@@ -4,6 +4,7 @@ import type { CelestialBodyConfig } from '../types';
 import { formatDistance, formatSpeed } from './format';
 import { FACTS } from '../data/facts';
 import { DEEP_SPACE_DRONE_MAX_GAIN } from '../data/constants';
+import { loadSettings, saveSettings, type AppSettings } from './settings';
 
 /*
  * Zen Drift HUD — minimal, serif, nearly chromeless.
@@ -296,6 +297,10 @@ const CSS = `
 .zen-sheet input[type="range"]::-webkit-slider-thumb:hover { background: var(--text); }
 .zen-sheet .close { margin-top: 40px; color: var(--faint); }
 .zen-sheet .close:hover { color: var(--text); }
+.sh-layers { display: flex; flex-direction: column; align-items: center; }
+.sh-layers .k { margin-bottom: 6px; }
+.zen-sheet .inner { max-height: 86vh; overflow-y: auto; scrollbar-width: none; }
+.zen-sheet .inner::-webkit-scrollbar { display: none; }
 
 /* ---------- start overlay (spinning ring, lowercase) ---------- */
 .zen-start {
@@ -332,6 +337,9 @@ interface HUDCallbacks {
   onTopView: () => void;
   onToggleLabels: (visible: boolean) => void;
   onToggleOrbits: (visible: boolean) => void;
+  onToggleStarfield: (visible: boolean) => void;
+  onToggleBelts: (visible: boolean) => void;
+  onToggleFlood: (flood: boolean) => void;
   onTimeStep: (dir: 1 | -1) => void;
   onTimeLive: () => void;
   onToggleDebug: () => void;
@@ -573,14 +581,17 @@ function HUDApp({
   const [, setTick] = useState(0);
   const [openMenu, setOpenMenu] = useState<MenuName | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [labelsOn, setLabelsOn] = useState(true);
-  const [orbitsOn, setOrbitsOn] = useState(true);
   const [navHelp, setNavHelp] = useState(false);
-  const [bgAudio, setBgAudio] = useState(true);
   const [debugOn, setDebugOn] = useState(false);
-  const [volume, setVolume] = useState(100);
-  const [bloom, setBloom] = useState(100);
+  const [settings, setSettings] = useState<AppSettings>(loadSettings);
   rerenderHUD = useCallback(() => setTick((t) => t + 1), []);
+
+  /** Flip a boolean setting: persist + notify the engine. */
+  const toggleSetting = (key: keyof AppSettings, notify: (v: boolean) => void) => {
+    const next = !settings[key];
+    setSettings(saveSettings({ [key]: next }));
+    notify(next);
+  };
 
   useEffect(() => {
     // Any click outside the orbs/menus closes the open menu; keep arc
@@ -637,22 +648,7 @@ function HUDApp({
       <div id="hud">
         <div class="zen-corner">
           <button class="whisper" onClick={() => setSheetOpen(true)}>settings</button>
-          <ZenCheck label="labels" checked={labelsOn} onToggle={() => {
-            const next = !labelsOn;
-            setLabelsOn(next);
-            callbacks.onToggleLabels(next);
-          }} />
-          <ZenCheck label="orbit lines" checked={orbitsOn} onToggle={() => {
-            const next = !orbitsOn;
-            setOrbitsOn(next);
-            callbacks.onToggleOrbits(next);
-          }} />
           <ZenCheck label="controls" checked={navHelp} onToggle={() => setNavHelp(!navHelp)} />
-          <ZenCheck label="background audio" checked={bgAudio} onToggle={() => {
-            const next = !bgAudio;
-            setBgAudio(next);
-            callbacks.onToggleBackgroundAudio(next);
-          }} />
           <ZenCheck label="debug" checked={debugOn} onToggle={() => {
             setDebugOn(!debugOn);
             callbacks.onToggleDebug();
@@ -724,7 +720,7 @@ function HUDApp({
 
         {navHelp && <NavHelp />}
 
-        {s.started && <TimeBar callbacks={callbacks} />}
+        {s.started && settings.timeBar && <TimeBar callbacks={callbacks} />}
 
         <ArcLine menu={openMenu} count={openMenu ? menuItems[openMenu].length : 0} />
         <Constellation name="moons" items={moons} open={openMenu === 'moons'} onPick={pickBody} />
@@ -763,23 +759,23 @@ function HUDApp({
             <div class="inner">
               <h3>settings</h3>
               <div class="sh-row">
-                <span class="k">volume<output>{volume}</output></span>
+                <span class="k">volume<output>{settings.volume}</output></span>
                 <input
-                  type="range" min="0" max="100" value={volume}
+                  type="range" min="0" max="100" value={settings.volume}
                   onInput={(e) => {
                     const v = Number((e.target as HTMLInputElement).value);
-                    setVolume(v);
+                    setSettings(saveSettings({ volume: v }));
                     callbacks.onVolumeChange(v / 100);
                   }}
                 />
               </div>
               <div class="sh-row">
-                <span class="k">glow<output>{bloom}</output></span>
+                <span class="k">glow<output>{settings.bloom}</output></span>
                 <input
-                  type="range" min="0" max="200" value={bloom}
+                  type="range" min="0" max="200" value={settings.bloom}
                   onInput={(e) => {
                     const v = Number((e.target as HTMLInputElement).value);
-                    setBloom(v);
+                    setSettings(saveSettings({ bloom: v }));
                     callbacks.onBloomStrengthChange(v / 100);
                   }}
                 />
@@ -793,6 +789,23 @@ function HUDApp({
                     callbacks.onSpeedChange(0.01 * Math.pow(500 / 0.01, pct));
                   }}
                 />
+              </div>
+              <div class="sh-row sh-layers">
+                <span class="k">layers</span>
+                <ZenCheck label="labels" checked={settings.labels}
+                  onToggle={() => toggleSetting('labels', callbacks.onToggleLabels)} />
+                <ZenCheck label="orbit lines" checked={settings.orbitLines}
+                  onToggle={() => toggleSetting('orbitLines', callbacks.onToggleOrbits)} />
+                <ZenCheck label="star field" checked={settings.starField}
+                  onToggle={() => toggleSetting('starField', callbacks.onToggleStarfield)} />
+                <ZenCheck label="asteroid belts" checked={settings.belts}
+                  onToggle={() => toggleSetting('belts', callbacks.onToggleBelts)} />
+                <ZenCheck label="time bar" checked={settings.timeBar}
+                  onToggle={() => toggleSetting('timeBar', () => {})} />
+                <ZenCheck label="flood lighting" checked={settings.floodLighting}
+                  onToggle={() => toggleSetting('floodLighting', callbacks.onToggleFlood)} />
+                <ZenCheck label="background audio" checked={settings.backgroundAudio}
+                  onToggle={() => toggleSetting('backgroundAudio', callbacks.onToggleBackgroundAudio)} />
               </div>
               <button class="whisper close" onClick={() => setSheetOpen(false)}>return</button>
             </div>
@@ -816,6 +829,9 @@ export class HUD {
     onTopView: () => {},
     onToggleLabels: () => {},
     onToggleOrbits: () => {},
+    onToggleStarfield: () => {},
+    onToggleBelts: () => {},
+    onToggleFlood: () => {},
     onTimeStep: () => {},
     onTimeLive: () => {},
     onToggleDebug: () => {},

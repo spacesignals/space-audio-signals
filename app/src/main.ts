@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { SolarSystem } from './engine/SolarSystem';
 import { OrbitLines } from './engine/OrbitLines';
+import { BeltField } from './engine/BeltField';
 import { Ephemeris } from './engine/Ephemeris';
 import { SimClock } from './engine/SimClock';
 import { Navigation } from './engine/Navigation';
@@ -8,6 +9,7 @@ import { PostProcessing } from './engine/PostProcessing';
 import { AudioEngine } from './audio/AudioEngine';
 import { HUD } from './ui/HUD.tsx';
 import { Labels } from './ui/Labels';
+import { loadSettings } from './ui/settings';
 import { PerformanceMonitor } from './engine/PerformanceMonitor';
 import { AdaptiveResolution } from './engine/AdaptiveResolution';
 import { BODIES, MOON_ORBITS } from './data/bodies';
@@ -40,6 +42,7 @@ class App {
 
   private solarSystem: SolarSystem;
   private orbitLines: OrbitLines;
+  private beltField: BeltField;
   private ephemeris: Ephemeris;
   private simClock = new SimClock();
   private navigation: Navigation;
@@ -90,6 +93,8 @@ class App {
       (texture) => this.renderer.initTexture(texture)
     );
     this.orbitLines = new OrbitLines(this.scene);
+    // Belts: fewer points on coarse-pointer (mobile/tablet) devices
+    this.beltField = new BeltField(this.scene, window.matchMedia('(pointer: coarse)').matches);
     this.navigation = new Navigation(this.camera, this.renderer.domElement);
     this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera);
     this.audioEngine = new AudioEngine();
@@ -174,13 +179,24 @@ class App {
         .map(b => b.id);
     };
 
+    // Apply persisted settings (every layer/mod has a toggle; all survive reload)
+    const settings = loadSettings();
+    this.labels.setVisible(settings.labels);
+    this.orbitLines.setVisible(settings.orbitLines);
+    this.solarSystem.setStarfieldVisible(settings.starField);
+    this.solarSystem.setFloodLighting(settings.floodLighting);
+    this.beltField.setVisible(settings.belts);
+    this.postProcessing.setBloomStrength(settings.bloom / 100);
+
     // Background audio toggle (default: enabled — audio continues when tab hidden)
-    let backgroundAudioEnabled = true;
+    let backgroundAudioEnabled = settings.backgroundAudio;
 
     this.hud.setCallbacks({
       onBodySelect: (bodyId) => this.focusBody(bodyId),
       onStart: () => {
-        this.audioEngine.init();
+        void this.audioEngine.init().then(() => {
+          this.audioEngine.setMasterVolume(loadSettings().volume / 100);
+        });
         this.running = true;
       },
       onTour: () => {
@@ -194,6 +210,9 @@ class App {
       onTimeLive: () => this.simClock.goLive(),
       onToggleLabels: (visible) => this.labels.setVisible(visible),
       onToggleOrbits: (visible) => this.orbitLines.setVisible(visible),
+      onToggleStarfield: (visible) => this.solarSystem.setStarfieldVisible(visible),
+      onToggleFlood: (flood) => this.solarSystem.setFloodLighting(flood),
+      onToggleBelts: (visible) => this.beltField.setVisible(visible),
       onToggleDebug: () => this.perfMonitor.toggle(),
       onVolumeChange: (volume) => this.audioEngine.setMasterVolume(volume),
       onBloomStrengthChange: (strength) => this.postProcessing.setBloomStrength(strength),
@@ -237,6 +256,7 @@ class App {
     this.solarSystem.updatePositions(positions);
     this.solarSystem.updateRotations(deltaTime);
     this.orbitLines.update(this.camera.position, positions);
+    this.beltField.update(this.simClock.getSimMs());
     this.labels.update(this.camera, positions);
 
     // Update camera

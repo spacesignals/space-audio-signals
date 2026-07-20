@@ -26,6 +26,14 @@ export class SolarSystem {
   private maxAnisotropy: number;
   private starTime = 0;
   private starMaterial: THREE.ShaderMaterial | null = null;
+  private ambient: THREE.AmbientLight;
+  private ambientTarget: number;
+  private skyMesh: THREE.Mesh | null = null;
+  private pointStars: THREE.Points | null = null;
+
+  /** Natural lighting: sun-driven, dim ambient. Flood: night sides inspectable. */
+  private static readonly AMBIENT_NATURAL = 0.4;
+  private static readonly AMBIENT_FLOOD = 2.2;
 
   private uploadTexture?: (texture: THREE.Texture) => void;
 
@@ -44,8 +52,9 @@ export class SolarSystem {
     this.scene.add(this.sunLight);
 
     // Ambient so shadow-side of planets aren't pure black
-    const ambient = new THREE.AmbientLight(0x222233, 0.4);
-    this.scene.add(ambient);
+    this.ambient = new THREE.AmbientLight(0x222233, SolarSystem.AMBIENT_NATURAL);
+    this.ambientTarget = SolarSystem.AMBIENT_NATURAL;
+    this.scene.add(this.ambient);
 
     this.createStarfield();
   }
@@ -237,6 +246,22 @@ export class SolarSystem {
       this.starTime += deltaTime;
       this.starMaterial.uniforms.time.value = this.starTime;
     }
+    // Ease ambient toward its target so lighting-mode switches never pop
+    const diff = this.ambientTarget - this.ambient.intensity;
+    if (Math.abs(diff) > 0.001) {
+      this.ambient.intensity += diff * Math.min(1, deltaTime * 4);
+    }
+  }
+
+  /** Flood lighting: raise ambient so night sides are inspectable. Eased, ~0.5s. */
+  setFloodLighting(flood: boolean): void {
+    this.ambientTarget = flood ? SolarSystem.AMBIENT_FLOOD : SolarSystem.AMBIENT_NATURAL;
+  }
+
+  /** Toggle the Milky Way skybox + point stars layer. */
+  setStarfieldVisible(visible: boolean): void {
+    if (this.skyMesh) this.skyMesh.visible = visible;
+    if (this.pointStars) this.pointStars.visible = visible;
   }
 
   getBodyPosition(id: string): THREE.Vector3 | null {
@@ -410,6 +435,8 @@ export class SolarSystem {
       side: THREE.BackSide,
     });
     const sky = new THREE.Mesh(skyGeom, skyMat);
+    sky.name = 'skybox';
+    this.skyMesh = sky;
     this.scene.add(sky);
 
     this.textureLoader.load(
@@ -527,6 +554,7 @@ export class SolarSystem {
 
     const stars = new THREE.Points(geometry, this.starMaterial);
     stars.name = 'point-stars';
+    this.pointStars = stars;
     this.scene.add(stars);
   }
 

@@ -58,6 +58,9 @@ class App {
   private _audioFwd = new THREE.Vector3();
   private _audioUp = new THREE.Vector3();
   private lastHudUpdate = 0;
+  private lastNearestUnits = 50; // distance to nearest body, scales scroll-dolly
+  private _raycaster = new THREE.Raycaster();
+  private _pointerNdc = new THREE.Vector2();
 
   private constructor() {
     // Renderer
@@ -226,6 +229,34 @@ class App {
     // 1-9 speed presets flash the HUD speed readout
     this.navigation.setOnSpeedPreset(() => this.hud.flashSpeed());
 
+    // Scroll-dolly steps scale with proximity to the nearest body
+    this.navigation.setDollyScaleProvider(() => this.lastNearestUnits);
+
+    // Tour: info panel follows whichever body the tour is heading to
+    this.navigation.setOnTourBodyChange((bodyId) => {
+      const body = BODIES.find(b => b.id === bodyId);
+      if (body) this.hud.showBodyInfo(body);
+    });
+
+    // Click a celestial body itself (not just its label) to fly there.
+    // Drag guard: only treat as a click if the pointer barely moved.
+    let downX = 0, downY = 0, downAt = 0;
+    this.renderer.domElement.addEventListener('pointerdown', (e) => {
+      downX = e.clientX; downY = e.clientY; downAt = performance.now();
+    });
+    this.renderer.domElement.addEventListener('click', (e) => {
+      if (!this.running) return;
+      if (Math.abs(e.clientX - downX) > 6 || Math.abs(e.clientY - downY) > 6) return;
+      if (performance.now() - downAt > 400) return;
+      this._pointerNdc.set(
+        (e.clientX / window.innerWidth) * 2 - 1,
+        -(e.clientY / window.innerHeight) * 2 + 1
+      );
+      this._raycaster.setFromCamera(this._pointerNdc, this.camera);
+      const bodyId = this.solarSystem.pickBody(this._raycaster);
+      if (bodyId) this.focusBody(bodyId);
+    });
+
     // Shareable deep links: #saturn focuses Saturn; hash updates on focus
     window.addEventListener('hashchange', () => {
       if (this.running) this.applyHashTarget();
@@ -354,6 +385,9 @@ class App {
     }
 
     distances.sort((a, b) => a.distanceKm - b.distanceKm);
+    if (distances.length > 0) {
+      this.lastNearestUnits = distances[0].distanceKm / KM_PER_UNIT;
+    }
     return distances;
   }
 

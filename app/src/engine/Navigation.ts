@@ -44,6 +44,11 @@ export class Navigation {
   private speed = FREE_FLIGHT_SPEED;
   private speedTarget = FREE_FLIGHT_SPEED;
   private onSpeedPreset: ((speed: number) => void) | null = null;
+  // Scroll-wheel dolly: remaining travel along the view axis, eased out over
+  // a few frames. Step size scales with distance to the nearest body so a
+  // scroll tick near a moon is gentle and in deep space covers real ground.
+  private dollyRemaining = 0;
+  private dollyScaleProvider: (() => number) | null = null;
   private keys: Set<string> = new Set();
   private mouseDown = false;
   private lastMouseX = 0;
@@ -124,6 +129,7 @@ export class Navigation {
   private tourPrevOrbitQuat = new THREE.Quaternion(); // for seamless orbit→travel blend
   private tourOrbitStartPos = new THREE.Vector3(); // camera pos when orbit begins
   private onTourComplete: (() => void) | null = null;
+  private onTourBodyChange: ((bodyId: string) => void) | null = null;
   private getBodyPosition: ((id: string) => THREE.Vector3 | null) | null = null;
 
   // Drift (zero-gravity feel) — offset only, never mutates camera.position
@@ -220,6 +226,16 @@ export class Navigation {
     this.onSpeedPreset = cb;
   }
 
+  /** Provide distance (units) to the nearest body — scales scroll-dolly steps. */
+  setDollyScaleProvider(fn: (() => number) | null): void {
+    this.dollyScaleProvider = fn;
+  }
+
+  /** Notify when the tour moves on to its next body (HUD info panel follows). */
+  setOnTourBodyChange(cb: ((bodyId: string) => void) | null): void {
+    this.onTourBodyChange = cb;
+  }
+
   private setupMouse(canvas: HTMLCanvasElement): void {
     canvas.addEventListener('mousedown', (e) => {
       this.interruptAutopilot();
@@ -245,14 +261,15 @@ export class Navigation {
       this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch));
     });
 
-    // Scroll to change speed
+    // Scroll: fast forward/backward travel along the view direction (zoom-like)
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      if (e.deltaY < 0) {
-        this.speedTarget = Math.min(this.speedTarget * 1.2, FREE_FLIGHT_SPEED_MAX);
-      } else {
-        this.speedTarget = Math.max(this.speedTarget / 1.2, FREE_FLIGHT_SPEED_MIN);
-      }
+      this.interruptAutopilot();
+      const nearest = this.dollyScaleProvider?.() ?? 50;
+      // Per notch (deltaY ~100): ~18% of the distance to the nearest body,
+      // clamped so it's never glacial and never a teleport
+      const step = Math.min(Math.max(nearest * 0.18, 0.05), 600);
+      this.dollyRemaining += -(e.deltaY / 100) * step;
     }, { passive: false });
   }
 
@@ -356,6 +373,14 @@ export class Navigation {
     const speedDiff = this.speedTarget - this.speed;
     if (Math.abs(speedDiff) > 1e-6) {
       this.speed += speedDiff * Math.min(1, deltaTime * 10);
+    }
+
+    // Apply scroll-wheel dolly: exponential ease-out along the view direction
+    if (Math.abs(this.dollyRemaining) > 1e-4 && this.mode === 'free-flight') {
+      const step = this.dollyRemaining * Math.min(1, deltaTime * 8);
+      this._forward.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+      this.camera.position.addScaledVector(this._forward, step);
+      this.dollyRemaining -= step;
     }
 
     if (this.mode === 'free-flight') {
@@ -794,8 +819,8 @@ export class Navigation {
     this.tourPhase = 'travel';
     this.mode = 'smooth-journey';
 
-    this.tourTravelDuration = 3000; // ~3s travel per body (same as before)
-    this.tourOrbitDurationPerBody = 9000; // ~9s orbit per body (doubled)
+    this.tourTravelDuration = 3000; // ~3s travel per body
+    this.tourOrbitDurationPerBody = 120_000; // 2 minutes lingering at each body
 
     // Capture current orientation for first seamless travel
     this.tourPrevOrbitQuat.copy(this.camera.quaternion);
@@ -811,6 +836,7 @@ export class Navigation {
 
   private startTourTravel(): void {
     const wp = this.tourWaypoints[this.tourIndex];
+    this.onTourBodyChange?.(wp.bodyId);
     const livePos = this.getBodyPosition?.(wp.bodyId);
     const target = livePos || wp.position;
 

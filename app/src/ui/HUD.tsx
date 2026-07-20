@@ -271,37 +271,40 @@ const CSS = `
   font-size: 11px; letter-spacing: 1px;
 }
 
-/* ---------- settings sheet ---------- */
-.zen-sheet {
-  position: absolute; inset: 0; z-index: 20;
-  display: grid; place-items: center;
-  background: rgba(3, 3, 9, 0.82); backdrop-filter: blur(8px);
-  pointer-events: auto;
+/* ---------- settings dropdown (anchored under the corner button) ---------- */
+.zen-drop {
+  position: absolute;
+  top: calc(52px + env(safe-area-inset-top, 0px));
+  left: calc(22px + env(safe-area-inset-left, 0px));
+  z-index: 20; width: 220px;
+  padding: 16px 18px 12px 18px;
+  background: rgba(3, 3, 9, 0.78); backdrop-filter: blur(8px);
+  border: 1px solid var(--faint); border-radius: 4px;
+  pointer-events: auto; text-align: left;
+  max-height: calc(100vh - 120px); overflow-y: auto; scrollbar-width: none;
 }
-.zen-sheet .inner { width: 300px; text-align: center; }
-.zen-sheet h3 { font-weight: 300; font-size: 22px; letter-spacing: 8px; text-transform: lowercase; margin: 0 0 44px 0; }
-.sh-row { margin: 30px 0; }
+.zen-drop::-webkit-scrollbar { display: none; }
+.sh-row { margin: 0 0 16px 0; }
 .sh-row .k {
-  font-family: system-ui, sans-serif; font-size: 10px; letter-spacing: 4px;
-  text-transform: uppercase; color: var(--dim); display: block; margin-bottom: 14px;
+  font-family: system-ui, sans-serif; font-size: 9px; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--dim); display: block; margin-bottom: 7px;
 }
-.sh-row .k output { color: var(--soft); margin-left: 10px; letter-spacing: 1px; }
-.zen-sheet input[type="range"] {
+.sh-row .k output { color: var(--soft); margin-left: 8px; letter-spacing: 1px; }
+.zen-drop input[type="range"] {
   -webkit-appearance: none; appearance: none; width: 100%; height: 1px; background: var(--faint);
   outline: none; cursor: pointer;
 }
-.zen-sheet input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
+.zen-drop input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
   background: #030309; border: 1px solid var(--text);
   transition: background 0.3s;
 }
-.zen-sheet input[type="range"]::-webkit-slider-thumb:hover { background: var(--text); }
-.zen-sheet .close { margin-top: 40px; color: var(--faint); }
-.zen-sheet .close:hover { color: var(--text); }
-.sh-layers { display: flex; flex-direction: column; align-items: center; }
-.sh-layers .k { margin-bottom: 6px; }
-.zen-sheet .inner { max-height: 86vh; overflow-y: auto; scrollbar-width: none; }
-.zen-sheet .inner::-webkit-scrollbar { display: none; }
+.zen-drop input[type="range"]::-webkit-slider-thumb:hover { background: var(--text); }
+.zen-drop .close { margin-top: 2px; color: var(--faint); padding: 4px 0; }
+.zen-drop .close:hover { color: var(--text); }
+.sh-layers { display: flex; flex-direction: column; align-items: flex-start; }
+.sh-layers .k { margin-bottom: 2px; }
+.sh-layers .zen-check { padding: 3px 0; }
 
 /* ---------- onboarding cards ---------- */
 .zen-onboard {
@@ -542,8 +545,9 @@ function NavHelp() {
           <tr><td>Space</td><td>Fly up</td></tr>
           <tr><td>Shift</td><td>Fly down</td></tr>
           <tr><td>Mouse drag</td><td>Look around</td></tr>
-          <tr><td>Scroll</td><td>Change speed</td></tr>
+          <tr><td>Scroll</td><td>Travel forward / back</td></tr>
           <tr><td>1 – 9</td><td>Speed presets (crawl to max)</td></tr>
+          <tr><td>Click body</td><td>Fly to it</td></tr>
         </tbody>
       </table>
     </div>
@@ -554,16 +558,16 @@ const ONBOARD_KEY = 'galaxymusic-onboarded-v1';
 
 const ONBOARD_CARDS: { title: string; body: string }[] = IS_TOUCH
   ? [
-      { title: 'look', body: 'drag with one finger to look around. the system is real — every world is where it truly is right now.' },
-      { title: 'fly', body: 'drag with two fingers to fly forward or back. pinch to change speed. double-tap to cruise.' },
-      { title: 'worlds sing', body: 'tap any label in space to fly there. the music follows you — each world carries its own stems, fading in as you approach.' },
-      { title: 'bend time', body: 'the clock in the corner bends time — months per second if you like. live always brings you home to now.' },
+      { title: 'look', body: 'drag with one finger to look around. planet positions are real and current.' },
+      { title: 'move', body: 'drag with two fingers to fly forward or back. pinch to change speed. double-tap to toggle cruise.' },
+      { title: 'navigate', body: 'tap a planet, moon, or its label to fly there. each body has its own audio that fades in as you get closer.' },
+      { title: 'time', body: 'the clock (bottom left) speeds up or reverses time with − and +. reset or live returns to real time.' },
     ]
   : [
-      { title: 'look', body: 'drag the mouse to look around. the system is real — every world is where it truly is right now.' },
-      { title: 'fly', body: 'w a s d flies. space rises, shift sinks. scroll — or keys 1 through 9 — sets your speed, from a crawl to light-footed.' },
-      { title: 'worlds sing', body: 'click any label in space to fly there. the music follows you — each world carries its own stems, fading in as you approach.' },
-      { title: 'bend time', body: 'the clock, bottom-left, bends time — months per second if you like. live always brings you home to now.' },
+      { title: 'look', body: 'drag the mouse to look around. planet positions are real and current.' },
+      { title: 'move', body: 'w a s d to move, space and shift for up and down. scroll to travel forward or back. keys 1–9 set speed (1 slowest, 9 fastest).' },
+      { title: 'navigate', body: 'click a planet, moon, or its label to fly there. each body has its own audio that fades in as you get closer.' },
+      { title: 'time', body: 'the clock (bottom left) speeds up or reverses time with − and +. reset or live returns to real time.' },
     ];
 
 function Onboarding({ onDone }: { onDone: () => void }) {
@@ -604,6 +608,11 @@ function TimeBar({ callbacks }: { callbacks: HUDCallbacks }) {
         <button class="zt-btn" title="Slower / backwards" onClick={() => callbacks.onTimeStep(-1)}>−</button>
         <span class="zt-rate">{s.timeRateLabel}</span>
         <button class="zt-btn" title="Faster forwards" onClick={() => callbacks.onTimeStep(1)}>+</button>
+        {!s.timeLive && (
+          <button class="zt-live" title="Return to real time" onClick={() => callbacks.onTimeLive()}>
+            reset
+          </button>
+        )}
         <button
           class={`zt-live${s.timeLive ? ' on' : ''}`}
           onClick={() => { if (!s.timeLive) callbacks.onTimeLive(); }}
@@ -658,9 +667,9 @@ function HUDApp({
   };
 
   useEffect(() => {
-    // Any click outside the orbs/menus closes the open menu; keep arc
-    // positions fresh on window resize.
-    const close = () => setOpenMenu(null);
+    // Any click outside the orbs/menus closes the open menu and the settings
+    // dropdown; keep arc positions fresh on window resize.
+    const close = () => { setOpenMenu(null); setSheetOpen(false); };
     const onResize = () => setTick((t) => t + 1);
     document.addEventListener('click', close);
     window.addEventListener('resize', onResize);
@@ -714,7 +723,7 @@ function HUDApp({
       )}
       <div id="hud">
         <div class="zen-corner">
-          <button class="whisper" onClick={() => setSheetOpen(true)}>settings</button>
+          <button class="whisper" onClick={(e) => { e.stopPropagation(); setSheetOpen(!sheetOpen); }}>settings</button>
           <button class="whisper" onClick={() => setOnboardOpen(true)}>guide</button>
           <ZenCheck label="controls" checked={navHelp} onToggle={() => setNavHelp(!navHelp)} />
           <ZenCheck label="debug" checked={debugOn} onToggle={() => {
@@ -832,9 +841,7 @@ function HUDApp({
         </div>
 
         {sheetOpen && (
-          <div class="zen-sheet" onClick={(e) => { if (e.target === e.currentTarget) setSheetOpen(false); }}>
-            <div class="inner">
-              <h3>settings</h3>
+          <div class="zen-drop" onClick={(e) => e.stopPropagation()}>
               <div class="sh-row">
                 <span class="k">volume<output>{settings.volume}</output></span>
                 <input
@@ -884,8 +891,7 @@ function HUDApp({
                 <ZenCheck label="background audio" checked={settings.backgroundAudio}
                   onToggle={() => toggleSetting('backgroundAudio', callbacks.onToggleBackgroundAudio)} />
               </div>
-              <button class="whisper close" onClick={() => setSheetOpen(false)}>return</button>
-            </div>
+              <button class="whisper close" onClick={() => setSheetOpen(false)}>close</button>
           </div>
         )}
       </div>

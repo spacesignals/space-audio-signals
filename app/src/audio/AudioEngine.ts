@@ -31,11 +31,11 @@ export class AudioEngine {
   private started = false;
   private lastEvictionCheck = 0;
   private lastDroneTarget = -1;
-  // Time-lapse duck: while sim time is scrubbing (not live), body stems pull
-  // back ~20% and the deep-space drone rises — time-lapse should feel like
-  // zooming out spiritually. 1 = live/no effect.
-  private timeDuck = 1;
-  private droneLift = 1;
+  // While sim time is scrubbing (not live), stem GAINS keep tracking the
+  // scene (audio always matches what's on screen), but we stop starting NEW
+  // stems and delay-layer countdowns — fast-moving bodies sweeping through
+  // audibility radii would otherwise pop layers in and out chaotically.
+  private scrubbing = false;
 
   // Body positions for spatial audio (updated each frame)
   private bodyPositions: Map<string, [number, number, number]> = new Map();
@@ -226,7 +226,7 @@ export class AudioEngine {
     for (const { bodyId, distanceKm, config } of distances) {
       const prefetchRadius = config.audibilityRadiusKm * STEM_PREFETCH_MULTIPLIER;
 
-      if (distanceKm < prefetchRadius) {
+      if (distanceKm < prefetchRadius && !this.scrubbing) {
         this.ensureStemsLoaded(config);
       }
 
@@ -239,10 +239,10 @@ export class AudioEngine {
       } else if (!isAudible && this.audibleBodies.has(bodyId)) {
         this.audibleBodies.delete(bodyId);
       }
-      this.startDueDelayedStems(bodyId);
+      if (!this.scrubbing) this.startDueDelayedStems(bodyId);
 
       if (isAudible && stemBudget > 0) {
-        const targetGain = this.calculateGain(distanceKm, config) * this.timeDuck;
+        const targetGain = this.calculateGain(distanceKm, config);
         this.setStemGains(bodyId, targetGain);
         if (targetGain > 0.001) {
           stemBudget -= config.stems.length + (config.delayedStems?.length ?? 0);
@@ -301,7 +301,7 @@ export class AudioEngine {
     }
 
     // Minimum 30% drone so there's always ambient sound (no stems loaded yet)
-    const target = (0.3 + 0.7 * closestNormalized) * DEEP_SPACE_DRONE_MAX_GAIN * this.droneLift;
+    const target = (0.3 + 0.7 * closestNormalized) * DEEP_SPACE_DRONE_MAX_GAIN;
 
     // Only schedule if target changed meaningfully (avoid redundant scheduling)
     if (Math.abs(target - this.lastDroneTarget) > 0.001) {
@@ -584,12 +584,12 @@ export class AudioEngine {
   }
 
   /**
-   * Called when sim-time scrubbing starts/stops. Existing setTargetAtTime
-   * crossfades make the transition smooth — no extra ramping needed here.
+   * Called when sim-time scrubbing starts/stops. While scrubbing, existing
+   * stems keep mixing by distance (audio matches the scene) but no new stems
+   * or delay layers start — prevents churn from fast-orbiting bodies.
    */
   setTimeDilation(active: boolean): void {
-    this.timeDuck = active ? 0.8 : 1;
-    this.droneLift = active ? 1.15 : 1;
+    this.scrubbing = active;
   }
 
   setMasterVolume(volume: number): void {

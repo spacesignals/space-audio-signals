@@ -191,13 +191,19 @@ export class SolarSystem {
           const t = (dist - innerR) / (outerR - innerR);
           uvs.setXY(i, t, 0.5);
         }
-        // Neptune: very faint dusty rings. Others: golden default.
-        const isNeptune = config.id === 'neptune';
+        // Saturn: bright golden (real texture loads below). Uranus: narrow,
+        // dark charcoal-gray. Neptune: very faint dusty rings.
+        const ringLook: Record<string, { color: number; opacity: number }> = {
+          saturn: { color: 0xc8b070, opacity: 0.6 },
+          uranus: { color: 0x76808c, opacity: 0.18 },
+          neptune: { color: 0x8888aa, opacity: 0.12 },
+        };
+        const look = ringLook[config.id] ?? { color: 0x9a9a9a, opacity: 0.3 };
         const ringMat = new THREE.MeshBasicMaterial({
-          color: isNeptune ? 0x8888aa : 0xc8b070,
+          color: look.color,
           side: THREE.DoubleSide,
           transparent: true,
-          opacity: isNeptune ? 0.12 : 0.6,
+          opacity: look.opacity,
           depthWrite: false, // transparent rings must not punch holes in what's behind them
         });
         // Load ring texture if Saturn
@@ -264,6 +270,24 @@ export class SolarSystem {
     if (this.pointStars) this.pointStars.visible = visible;
   }
 
+  /**
+   * Raycast pick: returns the bodyId under the ray, or null. Hits on child
+   * objects (atmosphere shells, rings, corona sprites) resolve to their body.
+   */
+  pickBody(raycaster: THREE.Raycaster): string | null {
+    const meshes: THREE.Object3D[] = [];
+    for (const [, body] of this.bodyMeshes) meshes.push(body.mesh);
+    const hits = raycaster.intersectObjects(meshes, true);
+    for (const hit of hits) {
+      let obj: THREE.Object3D | null = hit.object;
+      while (obj) {
+        if (this.bodyMeshes.has(obj.name)) return obj.name;
+        obj = obj.parent;
+      }
+    }
+    return null;
+  }
+
   getBodyPosition(id: string): THREE.Vector3 | null {
     const body = this.bodyMeshes.get(id);
     return body ? body.mesh.position.clone() : null;
@@ -327,11 +351,13 @@ export class SolarSystem {
    * and fades to transparent face-on, weighted toward the sunlit side.
    */
   private createAtmosphere(bodyRadiusUnits: number, colorHex: string): THREE.Mesh {
-    const geometry = new THREE.SphereGeometry(bodyRadiusUnits * 1.04, 64, 32);
+    // Thin shell + low intensity + tight rim falloff: a subtle limb haze that
+    // never competes with the planet surface itself.
+    const geometry = new THREE.SphereGeometry(bodyRadiusUnits * 1.025, 64, 32);
     const material = new THREE.ShaderMaterial({
       uniforms: {
         glowColor: { value: new THREE.Color(colorHex) },
-        intensity: { value: 0.9 },
+        intensity: { value: 0.3 },
       },
       vertexShader: `
         varying vec3 vNormal;
@@ -352,7 +378,7 @@ export class SolarSystem {
         varying vec3 vViewDir;
         varying vec3 vPosW;
         void main() {
-          float rim = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewDir))), 3.0);
+          float rim = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewDir))), 4.5);
           // Sun sits at the origin: fade the rim on the night side.
           // vNormal is view-space, so rotate the world-space sun direction into view space.
           vec3 sunDir = normalize(-vPosW);

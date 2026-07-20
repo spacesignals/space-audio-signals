@@ -23,9 +23,10 @@ const ASTRO_BODY: Record<string, Astronomy.Body> = {
 
 const PLANET_SEGMENTS = 256;
 const CIRCLE_SEGMENTS = 128;
-const PLANET_OPACITY = 0.32;
-const MOON_OPACITY = 0.22;
-const ASTEROID_OPACITY = 0.16;
+// Barely-visible guides: the map should whisper, not draw over the planets
+const PLANET_OPACITY = 0.10;
+const MOON_OPACITY = 0.07;
+const ASTEROID_OPACITY = 0.05;
 
 /**
  * Sample the parametric circular-with-inclination orbit used by

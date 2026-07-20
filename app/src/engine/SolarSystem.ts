@@ -173,7 +173,11 @@ export class SolarSystem {
 
       // Atmosphere rim: fresnel shell for bodies configured with an atmosphere
       if (config.atmosphereColor && !config.emissive) {
-        mesh.add(this.createAtmosphere(radiusUnits, config.atmosphereColor));
+        mesh.add(this.createAtmosphere(
+          radiusUnits,
+          config.atmosphereColor,
+          config.atmosphereIntensity ?? 0.25
+        ));
       }
 
       // Rings (Saturn, Uranus, Neptune)
@@ -350,14 +354,20 @@ export class SolarSystem {
    * Fresnel atmosphere rim: a slightly larger shell that glows at the limb
    * and fades to transparent face-on, weighted toward the sunlit side.
    */
-  private createAtmosphere(bodyRadiusUnits: number, colorHex: string): THREE.Mesh {
-    // Thin shell + low intensity + tight rim falloff: a subtle limb haze that
-    // never competes with the planet surface itself.
-    const geometry = new THREE.SphereGeometry(bodyRadiusUnits * 1.025, 64, 32);
+  private createAtmosphere(
+    bodyRadiusUnits: number,
+    colorHex: string,
+    intensity: number
+  ): THREE.Mesh {
+    // Per-body intensity scaled to the real atmosphere (Venus/Titan thick,
+    // ice giants thin). The rim peaks just inside the limb and melts to zero
+    // AT the silhouette, so there's no hard geometric edge — it reads as haze
+    // hugging the surface, not a separate shell.
+    const geometry = new THREE.SphereGeometry(bodyRadiusUnits * 1.03, 64, 32);
     const material = new THREE.ShaderMaterial({
       uniforms: {
         glowColor: { value: new THREE.Color(colorHex) },
-        intensity: { value: 0.3 },
+        intensity: { value: intensity },
       },
       vertexShader: `
         varying vec3 vNormal;
@@ -378,12 +388,16 @@ export class SolarSystem {
         varying vec3 vViewDir;
         varying vec3 vPosW;
         void main() {
-          float rim = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewDir))), 4.5);
+          float dotNV = abs(dot(normalize(vNormal), normalize(vViewDir)));
+          // Rim rises toward the limb...
+          float rim = pow(1.0 - dotNV, 3.0);
+          // ...but melts back to zero AT the silhouette — no hard outer edge
+          float edgeMelt = smoothstep(0.0, 0.22, dotNV);
           // Sun sits at the origin: fade the rim on the night side.
           // vNormal is view-space, so rotate the world-space sun direction into view space.
           vec3 sunDir = normalize(-vPosW);
           float day = clamp(dot(normalize(vNormal), (viewMatrix * vec4(sunDir, 0.0)).xyz), -1.0, 1.0) * 0.5 + 0.5;
-          float glow = rim * intensity * (0.25 + 0.75 * day);
+          float glow = rim * edgeMelt * intensity * (0.25 + 0.75 * day);
           gl_FragColor = vec4(glowColor, glow);
         }
       `,
@@ -557,8 +571,8 @@ export class SolarSystem {
         varying float vTwinkle;
         void main() {
           vColor = color;
-          // Subtle slow twinkle, stronger on small stars
-          vTwinkle = 0.82 + 0.18 * sin(time * (0.5 + fract(phase) * 1.5) + phase * 7.0);
+          // Very slow, gentle breathing — fast/deep twinkle reads as glitching
+          vTwinkle = 0.94 + 0.06 * sin(time * (0.1 + fract(phase) * 0.25) + phase * 7.0);
           gl_PointSize = size * pixelRatio;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }

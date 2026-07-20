@@ -23,6 +23,7 @@ export interface CelestialBodyConfig {
   ringInnerRadiusKm?: number;
   ringOuterRadiusKm?: number;
   atmosphereColor?: string;
+  atmosphereIntensity?: number; // 0..1 — scaled to the real atmosphere's prominence
 }
 
 export interface AudioStem {

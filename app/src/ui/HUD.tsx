@@ -121,6 +121,11 @@ const CSS = `
   height: 100%; background: var(--soft);
   transition: width 0.25s linear;
 }
+.zi-mix-row .pct {
+  font-family: system-ui, sans-serif;
+  font-size: 9px; letter-spacing: 0.5px; color: var(--soft);
+  min-width: 22px; text-align: right; font-variant-numeric: tabular-nums;
+}
 .zi-close {
   background: none; border: none; cursor: pointer;
   font-family: system-ui, sans-serif;
@@ -269,6 +274,10 @@ const CSS = `
 .zen-navhelp td:first-child {
   color: var(--text); padding-right: 22px; white-space: nowrap;
   font-size: 11px; letter-spacing: 1px;
+}
+.zen-navhelp td.nh-sec {
+  color: var(--dim); font-size: 9px; letter-spacing: 3px;
+  text-transform: uppercase; padding-top: 14px;
 }
 
 /* ---------- settings dropdown (anchored under the corner button) ---------- */
@@ -528,6 +537,8 @@ function NavHelp() {
             <tr><td>Double tap</td><td>Cruise forward on / off</td></tr>
             <tr><td>Two-finger drag</td><td>Fly forward / backward</td></tr>
             <tr><td>Pinch</td><td>Change speed</td></tr>
+            <tr><td class="nh-sec" colspan={2}>On a journey</td></tr>
+            <tr><td>Tap</td><td>Exit the journey</td></tr>
           </tbody>
         </table>
       </div>
@@ -548,6 +559,9 @@ function NavHelp() {
           <tr><td>Scroll</td><td>Travel forward / back</td></tr>
           <tr><td>1 – 9</td><td>Speed presets (crawl to max)</td></tr>
           <tr><td>Click body</td><td>Fly to it</td></tr>
+          <tr><td class="nh-sec" colspan={2}>On a journey</td></tr>
+          <tr><td>Right arrow</td><td>Skip to next stop</td></tr>
+          <tr><td>Space</td><td>Exit the journey</td></tr>
         </tbody>
       </table>
     </div>
@@ -561,12 +575,14 @@ const ONBOARD_CARDS: { title: string; body: string }[] = IS_TOUCH
       { title: 'look', body: 'drag with one finger to look around. planet positions are real and current.' },
       { title: 'move', body: 'drag with two fingers to fly forward or back. pinch to change speed. double-tap to toggle cruise.' },
       { title: 'navigate', body: 'tap a planet, moon, or its label to fly there. each body has its own audio that fades in as you get closer.' },
+      { title: 'journeys', body: 'the journeys menu runs a guided tour of the system. tap the screen to exit a journey at any time.' },
       { title: 'time', body: 'the clock (bottom left) speeds up or reverses time with − and +. reset or live returns to real time.' },
     ]
   : [
       { title: 'look', body: 'drag the mouse to look around. planet positions are real and current.' },
       { title: 'move', body: 'w a s d to move, space and shift for up and down. scroll to travel forward or back. keys 1–9 set speed (1 slowest, 9 fastest).' },
       { title: 'navigate', body: 'click a planet, moon, or its label to fly there. each body has its own audio that fades in as you get closer.' },
+      { title: 'journeys', body: 'the journeys menu runs a guided tour. on a journey, right arrow skips to the next stop and space exits.' },
       { title: 'time', body: 'the clock (bottom left) speeds up or reverses time with − and +. reset or live returns to real time.' },
     ];
 
@@ -755,26 +771,26 @@ function HUDApp({
                 {!hasStems && (
                   <div class="zi-mix-row"><span class="lbl">awaiting composition</span></div>
                 )}
-                {s.mix.map((m) => (
-                  <div class="zi-mix-row">
-                    <span class="lbl">{m.label}</span>
-                    <span class="bar">
-                      <span
-                        class="fill"
-                        style={{ width: `${Math.min(100, Math.round((m.gain / Math.max(body.maxGain, 0.01)) * 100))}%` }}
-                      ></span>
-                    </span>
-                  </div>
-                ))}
-                <div class="zi-mix-row">
-                  <span class="lbl">deep space drone</span>
-                  <span class="bar">
-                    <span
-                      class="fill"
-                      style={{ width: `${Math.min(100, Math.round((s.droneLevel / DEEP_SPACE_DRONE_MAX_GAIN) * 100))}%` }}
-                    ></span>
-                  </span>
-                </div>
+                {s.mix.map((m) => {
+                  const pct = Math.min(100, Math.round((m.gain / Math.max(body.maxGain, 0.01)) * 100));
+                  return (
+                    <div class="zi-mix-row">
+                      <span class="lbl">{m.label}</span>
+                      <span class="bar"><span class="fill" style={{ width: `${pct}%` }}></span></span>
+                      <span class="pct">{pct}</span>
+                    </div>
+                  );
+                })}
+                {(() => {
+                  const dpct = Math.min(100, Math.round((s.droneLevel / DEEP_SPACE_DRONE_MAX_GAIN) * 100));
+                  return (
+                    <div class="zi-mix-row">
+                      <span class="lbl">deep space drone</span>
+                      <span class="bar"><span class="fill" style={{ width: `${dpct}%` }}></span></span>
+                      <span class="pct">{dpct}</span>
+                    </div>
+                  );
+                })()}
                 <button
                   class="zi-close"
                   onClick={() => {
@@ -836,7 +852,7 @@ function HUDApp({
               onClick={(e) => { e.stopPropagation(); toggleMenu('views'); }}
               title="Views"
             ></button>
-            <span class="orb-lbl">views</span>
+            <span class="orb-lbl">journeys</span>
           </div>
         </div>
 

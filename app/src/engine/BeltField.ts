@@ -148,8 +148,13 @@ export class BeltField {
             sin(angle) * aRadius
           );
           vBright = aBright;
-          gl_PointSize = uSize * uPixelRatio;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(orbitPos, 1.0);
+          vec4 mvPos = modelViewMatrix * vec4(orbitPos, 1.0);
+          // Distance-attenuated size: near points grow, far points shrink —
+          // without this the cloud has zero parallax and reads as a flat
+          // backdrop that never responds to camera movement.
+          float dist = max(length(mvPos.xyz), 0.001);
+          gl_PointSize = uSize * uPixelRatio * clamp(80.0 / dist, 0.4, 6.0);
+          gl_Position = projectionMatrix * mvPos;
         }
       `,
       fragmentShader: `

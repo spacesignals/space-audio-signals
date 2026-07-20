@@ -54,6 +54,7 @@ export const BODIES: CelestialBodyConfig[] = [
     textureFile: 'venus.jpg',
     color: '#C4A882',
     atmosphereColor: '#E8C080',
+    atmosphereIntensity: 0.55,
   },
   {
     id: 'earth',
@@ -68,6 +69,7 @@ export const BODIES: CelestialBodyConfig[] = [
     textureFile: 'earth.jpg',
     color: '#4B7BE5',
     atmosphereColor: '#6CA6FF',
+    atmosphereIntensity: 0.4,
   },
   {
     id: 'mars',
@@ -95,6 +97,7 @@ export const BODIES: CelestialBodyConfig[] = [
     textureFile: 'jupiter.jpg',
     color: '#C88B3A',
     atmosphereColor: '#D4A65A',
+    atmosphereIntensity: 0.2,
   },
   {
     id: 'saturn',
@@ -109,6 +112,7 @@ export const BODIES: CelestialBodyConfig[] = [
     textureFile: 'saturn.jpg',
     color: '#E8D191',
     atmosphereColor: '#F0DCA0',
+    atmosphereIntensity: 0.2,
     hasRings: true,
     ringInnerRadiusKm: 74_500,
     ringOuterRadiusKm: 140_220,
@@ -126,6 +130,7 @@ export const BODIES: CelestialBodyConfig[] = [
     textureFile: 'uranus.jpg',
     color: '#73C2CB',
     atmosphereColor: '#A0E0E8',
+    atmosphereIntensity: 0.15,
     hasRings: true,
     ringInnerRadiusKm: 41_837,
     ringOuterRadiusKm: 51_149,
@@ -143,6 +148,7 @@ export const BODIES: CelestialBodyConfig[] = [
     textureFile: 'neptune.jpg',
     color: '#3E54E8',
     atmosphereColor: '#5070FF',
+    atmosphereIntensity: 0.18,
   },
   // --- Dwarf planet ---
   {
@@ -255,6 +261,7 @@ export const BODIES: CelestialBodyConfig[] = [
     textureFile: 'titan.jpg',
     color: '#D4A030',
     atmosphereColor: '#E8C060',
+    atmosphereIntensity: 0.5,
   },
   {
     id: 'enceladus',

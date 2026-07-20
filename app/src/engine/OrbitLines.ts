@@ -64,8 +64,9 @@ export function sampleCircleOrbit(radiusUnits: number, segments: number): Float3
 
 interface OrbitLine {
   line: THREE.LineLoop;
-  material: THREE.LineBasicMaterial;
+  material: THREE.ShaderMaterial;
   baseOpacity: number;
+  currentOpacity: number;
   bodyId: string;      // body this orbit belongs to (fades when camera is at the body)
   fadeRadius: number;  // visual radius of that body — sets the proximity-fade zone
   parentId?: string;   // moons: recentered on the parent each frame
@@ -97,21 +98,49 @@ export class OrbitLines {
     positions: Float32Array,
     color: string,
     baseOpacity: number,
-    entry: Omit<OrbitLine, 'line' | 'material' | 'baseOpacity'>
+    entry: Omit<OrbitLine, 'line' | 'material' | 'baseOpacity' | 'currentOpacity'>
   ): void {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const material = new THREE.LineBasicMaterial({
-      color: new THREE.Color(color),
+    // Trailing-arc shader: only the half-orbit BEHIND the body is drawn,
+    // full strength at the body fading smoothly to nothing half an orbit
+    // back (Eyes-style motion trail; also shows travel direction for free).
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uColor: { value: new THREE.Color(color) },
+        uOpacity: { value: baseOpacity },
+        uBodyAngle: { value: 0 },
+      },
+      vertexShader: `
+        uniform float uBodyAngle;
+        varying float vTrail;
+        void main() {
+          // All orbits are parametrized counterclockwise in the xz-plane,
+          // so angular distance BEHIND the body is (bodyAngle - vertexAngle)
+          float a = atan(position.z, position.x);
+          float behind = mod(uBodyAngle - a, 6.2831853);
+          vTrail = clamp(1.0 - behind / 3.14159265, 0.0, 1.0);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uColor;
+        uniform float uOpacity;
+        varying float vTrail;
+        void main() {
+          float alpha = vTrail * vTrail * uOpacity; // quadratic = softer tail
+          if (alpha < 0.001) discard;
+          gl_FragColor = vec4(uColor, alpha);
+        }
+      `,
       transparent: true,
-      opacity: baseOpacity,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
     const line = new THREE.LineLoop(geometry, material);
     line.frustumCulled = false; // huge loops flicker with sphere culling near the edge
     this.group.add(line);
-    this.lines.push({ line, material, baseOpacity, ...entry });
+    this.lines.push({ line, material, baseOpacity, currentOpacity: baseOpacity, ...entry });
   }
 
   /**
@@ -221,11 +250,21 @@ export class OrbitLines {
         const d = this._v.set(bp[0], bp[1], bp[2]).distanceTo(cameraPos);
         const r = Math.max(ol.fadeRadius, 0.01);
         fade = Math.min(Math.max((d - 8 * r) / (17 * r), 0), 1);
+
+        // Anchor the trailing arc at the body's current orbital angle
+        // (moons: angle around their parent; planets/asteroids: around the sun)
+        let cx = 0, cz = 0;
+        if (ol.parentId) {
+          const pp = positions.get(ol.parentId);
+          if (pp) { cx = pp[0]; cz = pp[2]; }
+        }
+        ol.material.uniforms.uBodyAngle.value = Math.atan2(bp[2] - cz, bp[0] - cx);
       }
       const target = ol.baseOpacity * fade;
-      if (Math.abs(ol.material.opacity - target) > 0.005) {
+      if (Math.abs(ol.currentOpacity - target) > 0.002) {
         // ease toward target so fades never pop
-        ol.material.opacity += (target - ol.material.opacity) * 0.15;
+        ol.currentOpacity += (target - ol.currentOpacity) * 0.15;
+        ol.material.uniforms.uOpacity.value = ol.currentOpacity;
       }
     }
   }

@@ -40,11 +40,20 @@ for (const body of BODIES) {
 export class Ephemeris {
   private positions: Map<string, [number, number, number]> = new Map();
   private lastUpdateTime = -Infinity;
-  private updateIntervalMs = 1000; // astronomy-engine bodies update at 1Hz
+  private updateIntervalMs = 1000; // astronomy-engine bodies SAMPLE at 1Hz
   private lastAstroSimMs = -Infinity;
   // Also refresh astronomy bodies whenever SIM time has moved this much —
   // during fast time scrubbing the 1Hz real-time gate would visibly jump.
   private astroSimThresholdMs = 600_000; // 10 sim-minutes
+
+  // Astronomy bodies are SAMPLED at 1Hz but OUTPUT positions interpolate
+  // between the last two samples every frame. Without this, planets hop
+  // once per second (Mercury moves ~47 km/s — a visible jump when the tour
+  // camera is orbit-locked to it, and every moon inherits the hop through
+  // its parent). Output lags one sample (~1s) behind — imperceptible.
+  private samplePrev: Map<string, [number, number, number]> = new Map();
+  private sampleCurr: Map<string, [number, number, number]> = new Map();
+  private sampleAtMs = -Infinity;
 
   constructor() {
     // Sun is always at origin
@@ -69,25 +78,42 @@ export class Ephemeris {
     if (realDue || simJumped) {
       this.lastUpdateTime = now;
       this.lastAstroSimMs = simMs;
-      this.updateAstronomyBodies(new Date(simMs));
+      this.samplePrev = this.sampleCurr;
+      this.sampleCurr = new Map();
+      this.sampleAstronomyBodies(new Date(simMs), this.sampleCurr);
+      if (this.samplePrev.size === 0) this.samplePrev = this.sampleCurr;
+      this.sampleAtMs = now;
     }
+
+    // Interpolate astronomy bodies between the two most recent samples
+    const t = Math.min(Math.max((now - this.sampleAtMs) / this.updateIntervalMs, 0), 1);
+    for (const [id, curr] of this.sampleCurr) {
+      const prev = this.samplePrev.get(id) ?? curr;
+      let out = this.positions.get(id);
+      if (!out) { out = [0, 0, 0]; this.positions.set(id, out); }
+      out[0] = prev[0] + (curr[0] - prev[0]) * t;
+      out[1] = prev[1] + (curr[1] - prev[1]) * t;
+      out[2] = prev[2] + (curr[2] - prev[2]) * t;
+    }
+
     this.updateCircularOrbits(simMs);
     return this.positions;
   }
 
-  /** Planets, Pluto, and Earth's Moon via astronomy-engine (1Hz). */
-  private updateAstronomyBodies(date: Date): void {
+  /** Sample planets, Pluto, and Earth's Moon via astronomy-engine into `out`. */
+  private sampleAstronomyBodies(date: Date, out: Map<string, [number, number, number]>): void {
     for (const [bodyId, astroBody] of Object.entries(BODY_MAP)) {
       try {
         if (bodyId === 'moon') {
-          // Moon is geocentric in astronomy-engine — add Earth's position
-          const earthPos = this.positions.get('earth');
+          // Moon is geocentric in astronomy-engine — add Earth's SAMPLED
+          // position (same sample set, so the pair interpolates coherently)
+          const earthPos = out.get('earth');
           if (!earthPos) continue;
           const geoVec = Astronomy.GeoVector(Astronomy.Body.Moon, date, true);
           const x = earthPos[0] + (geoVec.x * AU_TO_KM) / KM_PER_UNIT * BODY_VISUAL_SCALE;
           const y = earthPos[1] + (geoVec.z * AU_TO_KM) / KM_PER_UNIT * BODY_VISUAL_SCALE;
           const z = earthPos[2] + (geoVec.y * AU_TO_KM) / KM_PER_UNIT * BODY_VISUAL_SCALE;
-          this.positions.set('moon', [x, y, z]);
+          out.set('moon', [x, y, z]);
           continue;
         }
 
@@ -99,15 +125,14 @@ export class Ephemeris {
         const y = (vec.z * AU_TO_KM) / KM_PER_UNIT; // astronomy-engine z = our y (up)
         const z = (vec.y * AU_TO_KM) / KM_PER_UNIT; // astronomy-engine y = our z
 
-        this.positions.set(bodyId, [x, y, z]);
+        out.set(bodyId, [x, y, z]);
       } catch (err) {
-        if (!this.positions.has(bodyId)) {
-          this.positions.set(bodyId, [0, 0, 0]);
+        if (!out.has(bodyId)) {
+          out.set(bodyId, [0, 0, 0]);
         }
         console.warn(`Ephemeris error for ${bodyId}:`, err);
       }
     }
-
   }
 
   /** Circular-orbit moons + asteroids (every frame — cheap trig). */

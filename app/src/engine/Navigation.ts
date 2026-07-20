@@ -128,6 +128,7 @@ export class Navigation {
   private tourTiltZ = 0;
   private tourPrevOrbitQuat = new THREE.Quaternion(); // for seamless orbit→travel blend
   private tourOrbitStartPos = new THREE.Vector3(); // camera pos when orbit begins
+  private tourOrbitCenterStart = new THREE.Vector3(); // body pos when orbit begins (co-moving frame)
   private onTourComplete: (() => void) | null = null;
   private onTourBodyChange: ((bodyId: string) => void) | null = null;
   private getBodyPosition: ((id: string) => THREE.Vector3 | null) | null = null;
@@ -180,11 +181,31 @@ export class Navigation {
     this.pitch = euler.x;
   }
 
-  /** User input interrupts any automated camera mode. */
+  /**
+   * User input interrupts focus-travel/orbit autopilot — but NOT a journey.
+   * Journeys are only exited via space bar (or a tap on touch devices),
+   * so looking around / zooming can't accidentally end a 20-minute tour.
+   */
   private interruptAutopilot(): void {
+    if (this.mode === 'smooth-journey') return;
     if (this.mode !== 'free-flight') {
       this.enterFreeFlight();
     }
+  }
+
+  /** Skip ahead to the next journey stop (right arrow). */
+  private skipTourStep(): void {
+    if (this.mode !== 'smooth-journey') return;
+    this.tourIndex++;
+    if (this.tourIndex >= this.tourWaypoints.length) {
+      this.enterFreeFlight();
+      this.onTourComplete?.();
+      return;
+    }
+    // Depart smoothly from wherever we are, oriented as we are
+    this.travelStartQuat.copy(this.camera.quaternion);
+    this.tourPrevOrbitQuat.copy(this.camera.quaternion);
+    this.startTourTravel();
   }
 
   private setupKeyboard(): void {
@@ -192,6 +213,14 @@ export class Navigation {
       // Never fly the ship while the user is typing in a form field
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+
+      // On a journey: space exits, right arrow skips to the next stop,
+      // everything else is ignored (no accidental tour cancellation)
+      if (this.mode === 'smooth-journey') {
+        if (e.key === ' ') this.enterFreeFlight();
+        else if (e.key === 'ArrowRight') this.skipTourStep();
         return;
       }
 
@@ -264,6 +293,7 @@ export class Navigation {
     // Scroll: fast forward/backward travel along the view direction (zoom-like)
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
+      if (this.mode === 'smooth-journey') return; // zoom must not break a journey
       this.interruptAutopilot();
       const nearest = this.dollyScaleProvider?.() ?? 50;
       // Per notch (deltaY ~100): ~18% of the distance to the nearest body,
@@ -286,9 +316,11 @@ export class Navigation {
     let lastTapTime = 0;
 
     canvas.addEventListener('touchstart', (e) => {
-      // Touch interrupts tours/travel, same as mousedown (autoCruise survives —
-      // it's a free-flight modifier the user steers while cruising)
-      this.interruptAutopilot();
+      // Touch has no space bar: a tap remains the way out of a journey.
+      // Otherwise touch interrupts travel/orbit same as mousedown
+      // (autoCruise survives — it's a free-flight modifier).
+      if (this.mode === 'smooth-journey') this.enterFreeFlight();
+      else this.interruptAutopilot();
       if (e.touches.length === 1) {
         lastTouchX = e.touches[0].clientX;
         lastTouchY = e.touches[0].clientY;
@@ -885,6 +917,9 @@ export class Navigation {
     // Capture state at orbit start for smooth blend-in
     this.tourPrevOrbitQuat.copy(this.camera.quaternion);
     this.tourOrbitStartPos.copy(this.camera.position);
+    // Body position at orbit start — the orbit rig co-moves with the body so
+    // the camera follows it through its heliocentric path over the full 2min
+    this.tourOrbitCenterStart.copy(this.tourOrbitCenter);
 
     this.tourOrbitStartTime = performance.now();
     this.tourOrbitDuration = this.tourOrbitDurationPerBody;
@@ -1016,9 +1051,17 @@ export class Navigation {
       const dz = dOrbitZ;
       const dy = dOrbitX * Math.sin(this.tourTiltX) + dOrbitY * Math.cos(this.tourTiltX);
 
-      const camX = this.tourOrbitStartPos.x + dx;
-      const camY = this.tourOrbitStartPos.y + dy;
-      const camZ = this.tourOrbitStartPos.z + dz;
+      // Co-moving frame: translate the whole orbit rig by how far the body
+      // has travelled since the orbit began, so the camera tracks it through
+      // space instead of being anchored to a fixed world point (over 2 minutes
+      // an inner planet moves far enough to otherwise drift out of frame).
+      const followX = this.tourOrbitCenter.x - this.tourOrbitCenterStart.x;
+      const followY = this.tourOrbitCenter.y - this.tourOrbitCenterStart.y;
+      const followZ = this.tourOrbitCenter.z - this.tourOrbitCenterStart.z;
+
+      const camX = this.tourOrbitStartPos.x + followX + dx;
+      const camY = this.tourOrbitStartPos.y + followY + dy;
+      const camZ = this.tourOrbitStartPos.z + followZ + dz;
 
       this.camera.position.set(camX, camY, camZ);
 

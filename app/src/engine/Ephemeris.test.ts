@@ -66,6 +66,35 @@ describe('Ephemeris', () => {
     expect(pos2.size).toBeGreaterThanOrEqual(9);
   });
 
+  it('interpolates astronomy-body positions smoothly between 1Hz samples', () => {
+    const eph = new Ephemeris();
+    const t0 = 100_000;
+    // Realistic pair: samples one real second apart, sim time advancing ~2 days
+    // (fast time-lapse). Earth moves ~2 degrees — the interpolation chord hugs
+    // the orbit, matching how the live system feeds sim time each frame.
+    const s0 = Date.UTC(2026, 0, 1);
+    const s1 = Date.UTC(2026, 0, 3);
+    eph.update(t0, s0);
+    eph.update(t0 + 1000, s1); // establishes prev (s0) / curr (s1) pair
+
+    const dist = (p: [number, number, number]) => Math.hypot(p[0], p[1], p[2]);
+    const grab = (dt: number) =>
+      [...eph.update(t0 + 1000 + dt, s1)!.get('earth')!] as [number, number, number];
+
+    const early = grab(1);    // essentially the previous sample
+    const mid = grab(500);    // halfway to the next sample
+    const late = grab(1000);  // next full sample boundary
+
+    // Position moves each frame (no 1Hz hop) and progresses monotonically
+    const dEarlyMid = Math.hypot(mid[0] - early[0], mid[1] - early[1], mid[2] - early[2]);
+    const dMidLate = Math.hypot(late[0] - mid[0], late[1] - mid[1], late[2] - mid[2]);
+    expect(dEarlyMid).toBeGreaterThan(0);
+    expect(dMidLate).toBeGreaterThan(0);
+    // Earth stays at ~1 AU (~150 units) throughout — no interpolation blowup
+    expect(dist(mid)).toBeGreaterThan(120);
+    expect(dist(mid)).toBeLessThan(170);
+  });
+
   it('getPosition returns undefined for unknown body', () => {
     const eph = new Ephemeris();
     eph.update(100_000);

@@ -202,12 +202,13 @@ export class SolarSystem {
           { color: string; opacity: number; gaps: { at: number; width: number; depth: number }[] }
         > = {
           saturn: {
-            color: '#d8c69a',
-            opacity: 0.95,
+            // Warm and translucent like the original, just with structure.
+            color: '#cbb98c',
+            opacity: 0.7,
             gaps: [
-              { at: 0.08, width: 0.05, depth: 0.5 }, // C ring / inner falloff
-              { at: 0.55, width: 0.05, depth: 0.92 }, // Cassini Division
-              { at: 0.9, width: 0.02, depth: 0.7 }, // Encke Gap
+              { at: 0.08, width: 0.05, depth: 0.3 }, // C ring / inner falloff
+              { at: 0.55, width: 0.05, depth: 0.55 }, // Cassini Division (a hint, not a void)
+              { at: 0.9, width: 0.018, depth: 0.4 }, // Encke Gap
             ],
           },
           uranus: { color: '#8791a0', opacity: 0.5, gaps: [{ at: 0.5, width: 0.22, depth: 0.75 }] },
@@ -365,7 +366,7 @@ export class SolarSystem {
     // ice giants thin). The rim peaks just inside the limb and melts to zero
     // AT the silhouette, so there's no hard geometric edge — it reads as haze
     // hugging the surface, not a separate shell.
-    const geometry = new THREE.SphereGeometry(bodyRadiusUnits * 1.03, 64, 32);
+    const geometry = new THREE.SphereGeometry(bodyRadiusUnits * 1.02, 64, 32);
     const material = new THREE.ShaderMaterial({
       uniforms: {
         glowColor: { value: new THREE.Color(colorHex) },
@@ -391,15 +392,17 @@ export class SolarSystem {
         varying vec3 vPosW;
         void main() {
           float dotNV = abs(dot(normalize(vNormal), normalize(vViewDir)));
-          // Rim rises toward the limb...
-          float rim = pow(1.0 - dotNV, 3.0);
-          // ...but melts back to zero AT the silhouette — no hard outer edge
-          float edgeMelt = smoothstep(0.0, 0.22, dotNV);
+          // Rim rises toward the limb, but with a gentle exponent so the glow
+          // spreads across the disk as haze instead of a sharp shell ring...
+          float rim = pow(1.0 - dotNV, 2.2);
+          // ...and melts back to zero over a wide band AT the silhouette, so
+          // there's no hard outer edge — it dissolves into space.
+          float edgeMelt = smoothstep(0.0, 0.42, dotNV);
           // Sun sits at the origin: fade the rim on the night side.
           // vNormal is view-space, so rotate the world-space sun direction into view space.
           vec3 sunDir = normalize(-vPosW);
           float day = clamp(dot(normalize(vNormal), (viewMatrix * vec4(sunDir, 0.0)).xyz), -1.0, 1.0) * 0.5 + 0.5;
-          float glow = rim * edgeMelt * intensity * (0.25 + 0.75 * day);
+          float glow = rim * edgeMelt * intensity * (0.25 + 0.75 * day) * 0.75;
           gl_FragColor = vec4(glowColor, glow);
         }
       `,
@@ -422,7 +425,7 @@ export class SolarSystem {
     opacity: number,
     gaps: { at: number; width: number; depth: number }[]
   ): THREE.CanvasTexture {
-    const w = 1024;
+    const w = 2048;
     const h = 8;
     const canvas = document.createElement('canvas');
     canvas.width = w;
@@ -437,13 +440,16 @@ export class SolarSystem {
 
     for (let x = 0; x < w; x++) {
       const t = x / (w - 1); // 0 = inner edge, 1 = outer edge
-      // Layered ringlets: several spatial frequencies plus fine noise
+      // Layered ringlets: broad density waves plus several octaves of fine
+      // grain so the ring reads as countless particles, not a solid sheet.
       let d =
-        0.55 +
-        0.22 * Math.sin(t * Math.PI * 22) +
-        0.14 * Math.sin(t * Math.PI * 57 + 1.3) +
-        0.1 * Math.sin(t * Math.PI * 113 + 2.1) +
-        0.12 * (hashNoise(t * 260) - 0.5);
+        0.62 +
+        0.16 * Math.sin(t * Math.PI * 22) +
+        0.1 * Math.sin(t * Math.PI * 57 + 1.3) +
+        0.08 * Math.sin(t * Math.PI * 113 + 2.1) +
+        0.1 * (hashNoise(t * 260) - 0.5) +
+        0.09 * (hashNoise(t * 620) - 0.5) +
+        0.06 * (hashNoise(t * 1490) - 0.5);
       d = Math.max(0, Math.min(1, d));
       // Carve division gaps (smoothstep dip so edges aren't hard)
       for (const g of gaps) {
@@ -455,9 +461,11 @@ export class SolarSystem {
       }
       // Soft inner/outer edges
       const edge = Math.min(1, t / 0.04) * Math.min(1, (1 - t) / 0.05);
-      const a = Math.max(0, Math.min(1, d * edge)) * opacity;
-      // Denser ringlets read a touch brighter
-      const shade = 0.7 + 0.5 * d;
+      // Per-sample alpha grain: particulate, dusty translucency (not uniform fill)
+      const grain = 0.78 + 0.44 * hashNoise(t * 911 + 5.7);
+      const a = Math.max(0, Math.min(1, d * edge * grain)) * opacity;
+      // Denser ringlets read a touch brighter; a little grain in luminance too
+      const shade = 0.72 + 0.42 * d + 0.06 * (hashNoise(t * 733) - 0.5);
       const r = Math.min(255, base.r * 255 * shade);
       const gc = Math.min(255, base.g * 255 * shade);
       const b = Math.min(255, base.b * 255 * shade);

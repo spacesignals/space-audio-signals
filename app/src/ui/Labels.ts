@@ -148,6 +148,8 @@ export class Labels {
 
     const rects: LabelRect[] = [];
     const screenData = new Map<string, { x: number; y: number }>();
+    // Body screen disks (center + projected radius + depth) for occlusion tests
+    const disks: { id: string; cx: number; cy: number; r: number; dist: number }[] = [];
 
     for (const entry of this.entries) {
       const p = positions.get(entry.config.id);
@@ -178,9 +180,11 @@ export class Labels {
       }
 
       const sx = ((this._pos.x + 1) / 2) * w;
+      const cy = ((1 - this._pos.y) / 2) * h; // body center in screen space
       // Anchor above the body's limb: projected angular radius in pixels
       const radiusPx = dist > 0 ? (entry.visualRadius / dist / tanHalfFov) * halfH : 0;
-      const sy = ((1 - this._pos.y) / 2) * h - Math.min(radiusPx, h) - 8;
+      const sy = cy - Math.min(radiusPx, h) - 8;
+      disks.push({ id: entry.config.id, cx: sx, cy, r: radiusPx, dist });
 
       // When the body grows large in view (you're looking right at it), let the
       // body sit "in front of" its own name: fade the label as its disk fills
@@ -205,6 +209,20 @@ export class Labels {
     }
 
     const hidden = resolveLabelOverlaps(rects);
+
+    // Depth occlusion: hide a label when its body sits behind a nearer body's
+    // disk — a moon passing behind the planet you're orbiting must never draw
+    // its name over the planet. (A moon in front stays labeled.)
+    for (const a of disks) {
+      if (hidden.has(a.id)) continue;
+      for (const b of disks) {
+        if (b.id === a.id || b.dist >= a.dist) continue; // b must be in front of a
+        const dx = a.cx - b.cx;
+        const dy = a.cy - b.cy;
+        const rr = b.r * 0.92;
+        if (dx * dx + dy * dy < rr * rr) { hidden.add(a.id); break; }
+      }
+    }
 
     for (const entry of this.entries) {
       const sd = screenData.get(entry.config.id);

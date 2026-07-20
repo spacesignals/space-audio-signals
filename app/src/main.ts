@@ -198,6 +198,8 @@ class App {
           this.audioEngine.setMasterVolume(loadSettings().volume / 100);
         });
         this.running = true;
+        // Deep link (#saturn): fly there from the spawn view once started
+        this.applyHashTarget();
       },
       onTour: () => {
         this.navigation.startTour(waypointsFor(tourOrder), liveBodyPosition);
@@ -221,6 +223,14 @@ class App {
         backgroundAudioEnabled = enabled;
       },
     });
+    // 1-9 speed presets flash the HUD speed readout
+    this.navigation.setOnSpeedPreset(() => this.hud.flashSpeed());
+
+    // Shareable deep links: #saturn focuses Saturn; hash updates on focus
+    window.addEventListener('hashchange', () => {
+      if (this.running) this.applyHashTarget();
+    });
+
     document.addEventListener('visibilitychange', () => {
       if (!this.running) return;
       if (document.hidden && !backgroundAudioEnabled) {
@@ -312,6 +322,18 @@ class App {
     this.navigation.flyTo(pos, visualRadius);
     const body = BODIES.find(b => b.id === bodyId);
     if (body) this.hud.showBodyInfo(body);
+    // Keep the URL shareable (replaceState: no history spam, no scroll jump)
+    if (location.hash !== `#${bodyId}`) {
+      history.replaceState(null, '', `#${bodyId}`);
+    }
+  }
+
+  /** Focus the body named in the URL hash, if any (e.g. /galaxy/#saturn). */
+  private applyHashTarget(): void {
+    const id = location.hash.replace(/^#\/?/, '').toLowerCase();
+    if (id && BODIES.some(b => b.id === id)) {
+      this.focusBody(id);
+    }
   }
 
   /** Compute sorted distances from camera to all bodies. Shared by audio + HUD. */

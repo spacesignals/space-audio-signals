@@ -111,3 +111,32 @@ describe('Tour time budgeting', () => {
     expect(orbitPerBody).toBeGreaterThan(travelPerBody);
   });
 });
+
+// --- speed presets (1-9) ---
+import { speedForPresetKey } from './Navigation';
+import { FREE_FLIGHT_SPEED_MIN, FREE_FLIGHT_SPEED_MAX, FREE_FLIGHT_SPEED } from '../data/constants';
+
+describe('speedForPresetKey', () => {
+  it('key 1 is the minimum speed, key 9 the maximum', () => {
+    expect(speedForPresetKey(1)).toBeCloseTo(FREE_FLIGHT_SPEED_MIN, 10);
+    expect(speedForPresetKey(9)).toBeCloseTo(FREE_FLIGHT_SPEED_MAX, 8);
+  });
+
+  it('steps are log-spaced (constant ratio between adjacent keys)', () => {
+    const ratio = speedForPresetKey(2) / speedForPresetKey(1);
+    for (let n = 2; n < 9; n++) {
+      expect(speedForPresetKey(n + 1) / speedForPresetKey(n)).toBeCloseTo(ratio, 8);
+    }
+  });
+
+  it('key 5 lands near the default cruise speed', () => {
+    const mid = speedForPresetKey(5);
+    expect(mid).toBeGreaterThan(FREE_FLIGHT_SPEED * 0.05);
+    expect(mid).toBeLessThan(FREE_FLIGHT_SPEED * 20);
+  });
+
+  it('out-of-range keys clamp to the table', () => {
+    expect(speedForPresetKey(0)).toBe(speedForPresetKey(1));
+    expect(speedForPresetKey(12)).toBe(speedForPresetKey(9));
+  });
+});

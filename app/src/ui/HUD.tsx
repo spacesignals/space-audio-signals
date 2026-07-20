@@ -82,7 +82,8 @@ const CSS = `
   font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase;
   color: var(--dim); margin-top: 6px; font-variant-numeric: tabular-nums;
 }
-.zi-row.live { color: var(--soft); }
+.zi-row.live { color: var(--soft); transition: color 0.3s; }
+.zi-row.live.flash { color: var(--accent); }
 .zi-tagline {
   font-style: italic; font-size: 14px; letter-spacing: 1px;
   color: var(--soft); margin-top: 10px;
@@ -302,6 +303,29 @@ const CSS = `
 .zen-sheet .inner { max-height: 86vh; overflow-y: auto; scrollbar-width: none; }
 .zen-sheet .inner::-webkit-scrollbar { display: none; }
 
+/* ---------- onboarding cards ---------- */
+.zen-onboard {
+  position: absolute; inset: 0; z-index: 30;
+  display: grid; place-items: center;
+  background: rgba(3, 3, 9, 0.78); backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+.zen-onboard .card { width: 300px; text-align: center; padding: 0 20px; }
+.zen-onboard h3 {
+  font-weight: 300; font-size: 24px; letter-spacing: 8px;
+  text-transform: lowercase; margin: 0 0 22px 0;
+}
+.zen-onboard p {
+  font-size: 14px; letter-spacing: 0.5px; line-height: 1.7;
+  color: var(--soft); margin: 0 0 30px 0;
+}
+.zen-onboard .dots { display: flex; justify-content: center; gap: 10px; margin-bottom: 26px; }
+.zen-onboard .dots span {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--faint); transition: background 0.4s;
+}
+.zen-onboard .dots span.on { background: var(--soft); }
+
 /* ---------- start overlay (spinning ring, lowercase) ---------- */
 .zen-start {
   position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
@@ -360,6 +384,7 @@ interface HUDState {
   timeLive: boolean;
   mix: { label: string; gain: number }[];
   droneLevel: number;
+  speedFlashUntil: number;
 }
 
 // Imperative state bridge: Preact reads from this, main.ts writes to it
@@ -374,6 +399,7 @@ let hudState: HUDState = {
   timeLive: true,
   mix: [],
   droneLevel: 0,
+  speedFlashUntil: 0,
 };
 let rerenderHUD: (() => void) | null = null;
 
@@ -517,8 +543,45 @@ function NavHelp() {
           <tr><td>Shift</td><td>Fly down</td></tr>
           <tr><td>Mouse drag</td><td>Look around</td></tr>
           <tr><td>Scroll</td><td>Change speed</td></tr>
+          <tr><td>1 – 9</td><td>Speed presets (crawl to max)</td></tr>
         </tbody>
       </table>
+    </div>
+  );
+}
+
+const ONBOARD_KEY = 'galaxymusic-onboarded-v1';
+
+const ONBOARD_CARDS: { title: string; body: string }[] = IS_TOUCH
+  ? [
+      { title: 'look', body: 'drag with one finger to look around. the system is real — every world is where it truly is right now.' },
+      { title: 'fly', body: 'drag with two fingers to fly forward or back. pinch to change speed. double-tap to cruise.' },
+      { title: 'worlds sing', body: 'tap any label in space to fly there. the music follows you — each world carries its own stems, fading in as you approach.' },
+      { title: 'bend time', body: 'the clock in the corner bends time — months per second if you like. live always brings you home to now.' },
+    ]
+  : [
+      { title: 'look', body: 'drag the mouse to look around. the system is real — every world is where it truly is right now.' },
+      { title: 'fly', body: 'w a s d flies. space rises, shift sinks. scroll — or keys 1 through 9 — sets your speed, from a crawl to light-footed.' },
+      { title: 'worlds sing', body: 'click any label in space to fly there. the music follows you — each world carries its own stems, fading in as you approach.' },
+      { title: 'bend time', body: 'the clock, bottom-left, bends time — months per second if you like. live always brings you home to now.' },
+    ];
+
+function Onboarding({ onDone }: { onDone: () => void }) {
+  const [card, setCard] = useState(0);
+  const last = card === ONBOARD_CARDS.length - 1;
+  return (
+    <div class="zen-onboard">
+      <div class="card">
+        <h3>{ONBOARD_CARDS[card].title}</h3>
+        <p>{ONBOARD_CARDS[card].body}</p>
+        <div class="dots">
+          {ONBOARD_CARDS.map((_, i) => <span class={i === card ? 'on' : ''}></span>)}
+        </div>
+        <button
+          class="whisper"
+          onClick={() => (last ? onDone() : setCard(card + 1))}
+        >{last ? 'ok, got it' : 'next'}</button>
+      </div>
     </div>
   );
 }
@@ -583,6 +646,7 @@ function HUDApp({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [navHelp, setNavHelp] = useState(false);
   const [debugOn, setDebugOn] = useState(false);
+  const [onboardOpen, setOnboardOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   rerenderHUD = useCallback(() => setTick((t) => t + 1), []);
 
@@ -642,12 +706,16 @@ function HUDApp({
             hudState = { ...hudState, started: true };
             rerenderHUD?.();
             callbacks.onStart();
+            let seen = false;
+            try { seen = !!localStorage.getItem(ONBOARD_KEY); } catch { /* ignore */ }
+            if (!seen) setOnboardOpen(true);
           }}
         />
       )}
       <div id="hud">
         <div class="zen-corner">
           <button class="whisper" onClick={() => setSheetOpen(true)}>settings</button>
+          <button class="whisper" onClick={() => setOnboardOpen(true)}>guide</button>
           <ZenCheck label="controls" checked={navHelp} onToggle={() => setNavHelp(!navHelp)} />
           <ZenCheck label="debug" checked={debugOn} onToggle={() => {
             setDebugOn(!debugOn);
@@ -709,7 +777,7 @@ function HUDApp({
             );
           })()}
           {s.started && (
-            <div class="zi-row live">
+            <div class={`zi-row live${performance.now() < s.speedFlashUntil ? ' flash' : ''}`}>
               {s.nearestBody
                 ? `${s.nearestBody} · ${formatDistance(s.distanceKm)}`
                 : 'deep space'}
@@ -721,6 +789,15 @@ function HUDApp({
         {navHelp && <NavHelp />}
 
         {s.started && settings.timeBar && <TimeBar callbacks={callbacks} />}
+
+        {s.started && onboardOpen && (
+          <Onboarding
+            onDone={() => {
+              try { localStorage.setItem(ONBOARD_KEY, '1'); } catch { /* ignore */ }
+              setOnboardOpen(false);
+            }}
+          />
+        )}
 
         <ArcLine menu={openMenu} count={openMenu ? menuItems[openMenu].length : 0} />
         <Constellation name="moons" items={moons} open={openMenu === 'moons'} onPick={pickBody} />
@@ -875,6 +952,12 @@ export class HUD {
   /** Update the sim-time readout (date, rate label, live state). */
   updateTime(simDate: Date, timeRateLabel: string, timeLive: boolean): void {
     hudState = { ...hudState, simDate, timeRateLabel, timeLive };
+    rerenderHUD?.();
+  }
+
+  /** Briefly highlight the speed readout (1-9 preset feedback). */
+  flashSpeed(): void {
+    hudState = { ...hudState, speedFlashUntil: performance.now() + 1200 };
     rerenderHUD?.();
   }
 

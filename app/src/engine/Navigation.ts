@@ -19,6 +19,16 @@ function easeInOutQuad(t: number): number {
 }
 
 /**
+ * Number-key speed presets: nine log-spaced steps between min and max flight
+ * speed. Key 1 = slowest crawl, 5 ≈ default cruise, 9 = max. Exported for tests.
+ */
+export function speedForPresetKey(n: number): number {
+  const clamped = Math.min(Math.max(n, 1), 9);
+  return FREE_FLIGHT_SPEED_MIN *
+    Math.pow(FREE_FLIGHT_SPEED_MAX / FREE_FLIGHT_SPEED_MIN, (clamped - 1) / 8);
+}
+
+/**
  * Navigation handles camera movement in all modes:
  * - Free flight (WASD + mouse)
  * - Focus travel (fly to a target body)
@@ -29,8 +39,11 @@ export class Navigation {
   private camera: THREE.PerspectiveCamera;
   private mode: 'free-flight' | 'focus-travel' | 'smooth-journey' | 'top-view-travel' | 'orbit-settle' | 'orbit-idle' | 'departure-flyby' = 'free-flight';
 
-  // Free flight state
+  // Free flight state — speed eases toward speedTarget (~300ms) so preset
+  // jumps and slider drags never jerk the camera
   private speed = FREE_FLIGHT_SPEED;
+  private speedTarget = FREE_FLIGHT_SPEED;
+  private onSpeedPreset: ((speed: number) => void) | null = null;
   private keys: Set<string> = new Set();
   private mouseDown = false;
   private lastMouseX = 0;
@@ -170,15 +183,27 @@ export class Navigation {
 
   private setupKeyboard(): void {
     window.addEventListener('keydown', (e) => {
+      // Never fly the ship while the user is typing in a form field
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+
       this.keys.add(e.key.toLowerCase());
       this.autoCruise = false;
 
       // Speed control
       if (e.key === '=' || e.key === '+') {
-        this.speed = Math.min(this.speed * 1.5, FREE_FLIGHT_SPEED_MAX);
+        this.speedTarget = Math.min(this.speedTarget * 1.5, FREE_FLIGHT_SPEED_MAX);
       }
       if (e.key === '-') {
-        this.speed = Math.max(this.speed / 1.5, FREE_FLIGHT_SPEED_MIN);
+        this.speedTarget = Math.max(this.speedTarget / 1.5, FREE_FLIGHT_SPEED_MIN);
+      }
+
+      // Number keys 1-9: log-spaced speed presets (1 = crawl, 9 = max)
+      if (e.key >= '1' && e.key <= '9') {
+        this.speedTarget = speedForPresetKey(Number(e.key));
+        this.onSpeedPreset?.(this.speedTarget);
       }
 
       // Any key stops tour, travel, orbit, or departure flyby
@@ -188,6 +213,11 @@ export class Navigation {
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.key.toLowerCase());
     });
+  }
+
+  /** Notify (e.g. HUD flash) when a 1-9 speed preset is pressed. */
+  setOnSpeedPreset(cb: ((speed: number) => void) | null): void {
+    this.onSpeedPreset = cb;
   }
 
   private setupMouse(canvas: HTMLCanvasElement): void {
@@ -219,9 +249,9 @@ export class Navigation {
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       if (e.deltaY < 0) {
-        this.speed = Math.min(this.speed * 1.2, FREE_FLIGHT_SPEED_MAX);
+        this.speedTarget = Math.min(this.speedTarget * 1.2, FREE_FLIGHT_SPEED_MAX);
       } else {
-        this.speed = Math.max(this.speed / 1.2, FREE_FLIGHT_SPEED_MIN);
+        this.speedTarget = Math.max(this.speedTarget / 1.2, FREE_FLIGHT_SPEED_MIN);
       }
     }, { passive: false });
   }
@@ -280,8 +310,8 @@ export class Navigation {
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (touchStartDist > 0) {
           const scale = dist / touchStartDist;
-          this.speed = Math.max(FREE_FLIGHT_SPEED_MIN,
-            Math.min(FREE_FLIGHT_SPEED_MAX, this.speed * scale));
+          this.speedTarget = Math.max(FREE_FLIGHT_SPEED_MIN,
+            Math.min(FREE_FLIGHT_SPEED_MAX, this.speedTarget * scale));
           touchStartDist = dist;
         }
 
@@ -322,6 +352,12 @@ export class Navigation {
    * Update camera each frame.
    */
   update(deltaTime: number): void {
+    // Ease flight speed toward its target (~300ms) — presets/slider never jerk
+    const speedDiff = this.speedTarget - this.speed;
+    if (Math.abs(speedDiff) > 1e-6) {
+      this.speed += speedDiff * Math.min(1, deltaTime * 10);
+    }
+
     if (this.mode === 'free-flight') {
       this.updateFreeFlight(deltaTime);
     } else if (this.mode === 'focus-travel' || this.mode === 'top-view-travel') {
@@ -984,7 +1020,7 @@ export class Navigation {
   }
 
   setSpeed(speed: number): void {
-    this.speed = Math.max(FREE_FLIGHT_SPEED_MIN, Math.min(FREE_FLIGHT_SPEED_MAX, speed));
+    this.speedTarget = Math.max(FREE_FLIGHT_SPEED_MIN, Math.min(FREE_FLIGHT_SPEED_MAX, speed));
   }
 
   /**

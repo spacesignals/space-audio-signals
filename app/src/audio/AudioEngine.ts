@@ -50,6 +50,11 @@ export class AudioEngine {
   // stems are forced to 0 gain regardless of distance until unmuted.
   private mutedStems: Set<string> = new Set();
 
+  // When set, only this body's stems play — all others duck to silence. Set
+  // while the camera is orbiting/focused on a body so a focused planet is heard
+  // alone (no bleed from neighbors or the Sun).
+  private focusedBodyId: string | null = null;
+
   // Arrival tracking for delayed stems: ctx.currentTime when a body most recently became
   // audible, and the set of bodies currently audible (to detect the not-audible -> audible edge).
   private bodyArrivalTime: Map<string, number> = new Map();
@@ -269,7 +274,10 @@ export class AudioEngine {
       }
       if (!this.scrubbing) this.startDueDelayedStems(bodyId);
 
-      if (isAudible && stemBudget > 0) {
+      // Focus duck: while orbiting a body, everything else fades to silence.
+      const focusMuted = this.focusedBodyId !== null && bodyId !== this.focusedBodyId;
+
+      if (isAudible && stemBudget > 0 && !focusMuted) {
         const targetGain = this.calculateGain(distanceKm, config);
         this.setStemGains(bodyId, targetGain);
         if (targetGain > 0.001) {
@@ -328,8 +336,9 @@ export class AudioEngine {
       closestNormalized = Math.min(closestNormalized, normalized);
     }
 
-    // Minimum 30% drone so there's always ambient sound (no stems loaded yet)
-    const target = (0.3 + 0.7 * closestNormalized) * DEEP_SPACE_DRONE_MAX_GAIN;
+    // Small floor so deep space is never dead silent, but low enough that the
+    // bed recedes when you're close to a body with its own stems.
+    const target = (0.12 + 0.88 * closestNormalized) * DEEP_SPACE_DRONE_MAX_GAIN;
 
     // Only schedule if target changed meaningfully (avoid redundant scheduling)
     if (Math.abs(target - this.lastDroneTarget) > 0.001) {
@@ -594,21 +603,37 @@ export class AudioEngine {
    * gain (the value the audio thread is actually at, mid-crossfade included).
    * Used by the info panel — "what you're hearing and why".
    */
-  getBodyMix(bodyId: string): { id: string; label: string; gain: number; muted: boolean }[] {
-    const rows: { id: string; label: string; gain: number; muted: boolean }[] = [];
+  getMix(
+    selectedBodyId: string
+  ): { id: string; label: string; gain: number; muted: boolean; body?: string }[] {
+    const rows: { id: string; label: string; gain: number; muted: boolean; body?: string }[] = [];
+    const AUDIBLE = 0.004;
     for (const [stemId, stem] of this.stems) {
-      if (stem.bodyId !== bodyId || !stem.gainNode) continue;
+      if (!stem.gainNode) continue;
+      const gain = stem.gainNode.gain.value;
+      const isSelected = stem.bodyId === selectedBodyId;
+      // The selected body shows all its loaded stems (even silent); other bodies
+      // appear only while actually audible — so "now playing" matches what you
+      // hear (e.g. Earth's stem while looking at the Moon).
+      if (!isSelected && gain <= AUDIBLE) continue;
       // 'mercury/3FreudianPad.m4a' -> '3freudianpad'; delay layers marked
       const file = stem.url.split('/').pop() ?? stem.url;
       const base = file.replace(/\.[a-z0-9]+$/i, '').toLowerCase();
       rows.push({
         id: stemId,
         label: stem.isDelayed ? `${base} (late)` : base,
-        gain: stem.gainNode.gain.value,
+        gain,
         muted: this.mutedStems.has(stemId),
+        ...(isSelected ? {} : { body: stem.bodyId }),
       });
     }
-    rows.sort((a, b) => a.label.localeCompare(b.label));
+    // Selected body's stems first, then nearby bodies loudest-first.
+    rows.sort(
+      (a, b) =>
+        (a.body ? 1 : 0) - (b.body ? 1 : 0) ||
+        b.gain - a.gain ||
+        a.label.localeCompare(b.label)
+    );
     return rows;
   }
 
@@ -688,6 +713,14 @@ export class AudioEngine {
    */
   setTimeDilation(active: boolean): void {
     this.scrubbing = active;
+  }
+
+  /**
+   * Set the body the camera is focused on (or null in free flight). While set,
+   * every other body's stems duck to silence so the focused planet plays alone.
+   */
+  setFocusedBody(bodyId: string | null): void {
+    this.focusedBodyId = bodyId;
   }
 
   setMasterVolume(volume: number): void {

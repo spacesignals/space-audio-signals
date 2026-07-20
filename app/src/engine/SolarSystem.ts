@@ -611,13 +611,14 @@ export class SolarSystem {
       positions[i * 3 + 2] = radius * s * Math.sin(theta);
 
       const c = pickColor(Math.random());
-      // Brightness variation: many dim stars, few bright ones (power curve)
-      const brightness = 0.3 + 0.7 * Math.pow(Math.random(), 3);
+      // Brightness variation: many dim stars, few bright ones (power curve).
+      // Kept muted so the field reads as a quiet backdrop, not glitter.
+      const brightness = 0.2 + 0.45 * Math.pow(Math.random(), 3);
       colors[i * 3] = c.r * brightness;
       colors[i * 3 + 1] = c.g * brightness;
       colors[i * 3 + 2] = c.b * brightness;
 
-      sizes[i] = 1.0 + Math.pow(Math.random(), 4) * 3.0; // px; rare large stars
+      sizes[i] = 0.6 + Math.pow(Math.random(), 4) * 1.6; // px; small, few slightly larger
       phases[i] = Math.random() * Math.PI * 2;
     }
 
@@ -641,8 +642,8 @@ export class SolarSystem {
         varying float vTwinkle;
         void main() {
           vColor = color;
-          // Very slow, gentle breathing — fast/deep twinkle reads as glitching
-          vTwinkle = 0.94 + 0.06 * sin(time * (0.1 + fract(phase) * 0.25) + phase * 7.0);
+          // Barely-there breathing — kept subtle so stars don't sparkle/glitter
+          vTwinkle = 0.975 + 0.025 * sin(time * (0.1 + fract(phase) * 0.25) + phase * 7.0);
           gl_PointSize = size * pixelRatio;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }

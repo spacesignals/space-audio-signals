@@ -58,6 +58,8 @@ class App {
   private _audioFwd = new THREE.Vector3();
   private _audioUp = new THREE.Vector3();
   private lastHudUpdate = 0;
+  private windowFocused = true; // false when another window is focused — throttle rendering
+  private lastRenderTime = 0;
   private lastNearestUnits = 50; // distance to nearest body, scales scroll-dolly
   private _raycaster = new THREE.Raycaster();
   private _pointerNdc = new THREE.Vector2();
@@ -272,6 +274,11 @@ class App {
       }
     });
 
+    // When another window takes focus, throttle rendering to ~10fps so the page
+    // stops hogging the GPU while the user works elsewhere (audio keeps running).
+    window.addEventListener('blur', () => { this.windowFocused = false; });
+    window.addEventListener('focus', () => { this.windowFocused = true; });
+
     // Resize
     window.addEventListener('resize', () => this.onResize());
 
@@ -294,18 +301,24 @@ class App {
     // Update ephemeris (astronomy bodies at 1Hz, or per-frame while scrubbing)
     const positions = this.ephemeris.update(now, this.simClock.getSimMs());
 
-    // Update 3D scene
-    this.solarSystem.updatePositions(positions);
-    this.solarSystem.updateRotations(deltaTime);
-    this.orbitLines.update(this.camera.position, positions);
-    this.beltField.update(this.simClock.getSimMs());
-    this.labels.update(this.camera, positions);
-
-    // Update camera
+    // Update camera every frame — autopilot/travel must progress even unfocused
     this.navigation.update(deltaTime);
 
     // Compute distances once, share across audio + HUD
     const distances = this.computeDistances(positions);
+
+    // Throttle the expensive visual work to ~10fps when the window isn't focused
+    // so the page stops saturating the GPU while the user is in other apps.
+    // Simulation + audio still run every frame; only rendering is paced down.
+    const renderNow = this.windowFocused || now - this.lastRenderTime > 100;
+    if (renderNow) {
+      this.lastRenderTime = now;
+      this.solarSystem.updatePositions(positions);
+      this.solarSystem.updateRotations(deltaTime);
+      this.orbitLines.update(this.camera.position, positions);
+      this.beltField.update(this.simClock.getSimMs());
+      this.labels.update(this.camera, positions);
+    }
 
     // Update audio (distance-based stem mixing + spatial positioning)
     if (this.running) {
@@ -322,6 +335,10 @@ class App {
       );
       this.audioEngine.setBodyPositions(positions);
       this.audioEngine.setTimeDilation(!this.simClock.isLive());
+      // While orbiting/focused on a body, duck every other body to silence.
+      this.audioEngine.setFocusedBody(
+        this.navigation.isFocusing() && distances.length ? distances[0].bodyId : null
+      );
       this.audioEngine.update(distances);
     }
 
@@ -331,10 +348,12 @@ class App {
       this.updateHUD(distances);
     }
 
-    // Apply drift offset for visual rendering only
-    this.navigation.applyDrift();
-    this.postProcessing.render();
-    this.navigation.removeDrift();
+    // Apply drift offset for visual rendering only (skipped on throttled frames)
+    if (renderNow) {
+      this.navigation.applyDrift();
+      this.postProcessing.render();
+      this.navigation.removeDrift();
+    }
 
     // Update perf monitor
     this.perfMonitor.setResourceCounts({
@@ -412,7 +431,7 @@ class App {
     const selectedId = this.hud.getSelectedBodyId();
     if (selectedId) {
       this.hud.updateMix(
-        this.audioEngine.getBodyMix(selectedId),
+        this.audioEngine.getMix(selectedId),
         this.audioEngine.getDroneLevel()
       );
     }

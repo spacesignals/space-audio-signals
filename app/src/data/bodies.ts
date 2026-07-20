@@ -14,8 +14,8 @@ export const BODIES: CelestialBodyConfig[] = [
     name: 'Sun',
     type: 'star',
     radiusKm: 696_340,
-    audibilityRadiusKm: 2e9, // audible from very far
-    maxGain: 0.6,
+    audibilityRadiusKm: 6e8, // reined in so the Sun doesn't wash over the whole system
+    maxGain: 0.32,
     gainCurve: 'logarithmic',
     stems: ['sun/drone-01.m4a', 'sun/texture-01.m4a'],
     delayedStems: [],

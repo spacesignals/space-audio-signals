@@ -181,6 +181,20 @@ export class Navigation {
    * Switch to free-flight, syncing yaw/pitch to the camera's current
    * orientation so there's no snap. Safe to call from any mode.
    */
+  /**
+   * True when the camera is locked onto a single body — orbiting it after a
+   * click, or during the orbit phase of a tour. Used to duck all other bodies'
+   * audio so a focused planet plays alone. Travel/departure return false so the
+   * mix crossfades normally while moving between bodies.
+   */
+  isFocusing(): boolean {
+    return (
+      this.mode === 'orbit-settle' ||
+      this.mode === 'orbit-idle' ||
+      (this.mode === 'smooth-journey' && this.tourPhase === 'orbit')
+    );
+  }
+
   private enterFreeFlight(): void {
     this.mode = 'free-flight';
     const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');

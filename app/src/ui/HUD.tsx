@@ -103,6 +103,12 @@ const CSS = `
   font-size: 9px; letter-spacing: 3px; text-transform: uppercase;
   color: var(--faint); margin-top: 16px;
 }
+.zi-mix-sub {
+  font-family: system-ui, sans-serif;
+  font-size: 8px; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--faint); margin-top: 12px; opacity: 0.7;
+}
+.zi-mix-row .lbl .body { color: var(--faint); }
 .zi-mix-row {
   display: flex; align-items: center; justify-content: flex-end; gap: 10px;
   margin-top: 6px;
@@ -400,6 +406,7 @@ interface MixRow {
   label: string;
   gain: number;
   muted: boolean;
+  body?: string; // set when the stem belongs to a nearby body, not the selected one
 }
 
 interface HUDState {
@@ -770,6 +777,25 @@ function HUDApp({
             const body = s.selectedBody;
             const facts = FACTS[body.id];
             const hasStems = body.stems.length + (body.delayedStems?.length ?? 0) > 0;
+            const ownRows = s.mix.filter((m) => !m.body);
+            const nearbyRows = s.mix.filter((m) => m.body);
+            const renderMixRow = (m: MixRow) => {
+              const pct = Math.min(100, Math.round((m.gain / Math.max(body.maxGain, 0.01)) * 100));
+              return (
+                <button
+                  key={m.id}
+                  class={`zi-mix-row stem${m.muted ? ' muted' : ''}`}
+                  title={m.muted ? 'unmute stem' : 'mute stem'}
+                  onClick={(e) => { e.stopPropagation(); callbacks.onToggleStemMute(m.id); }}
+                >
+                  <span class="lbl">
+                    {m.body ? <span class="body">{m.body} · </span> : null}{m.label}
+                  </span>
+                  <span class="bar"><span class="fill" style={{ width: `${m.muted ? 0 : pct}%` }}></span></span>
+                  <span class="pct">{m.muted ? 'off' : pct}</span>
+                </button>
+              );
+            };
             return (
               <div class="panel">
                 <div class="zi-name" style={{ color: body.identityColor ?? 'var(--text)' }}>
@@ -782,27 +808,15 @@ function HUDApp({
                   <div class="zi-stat">{st.label}<b>{st.value}</b></div>
                 ))}
                 <div class="zi-mix-title">now playing</div>
-                {hasStems && s.mix.length === 0 && (
+                {hasStems && ownRows.length === 0 && (
                   <div class="zi-mix-row"><span class="lbl">stems loading…</span></div>
                 )}
-                {!hasStems && (
-                  <div class="zi-mix-row"><span class="lbl">awaiting composition</span></div>
+                {!hasStems && ownRows.length === 0 && (
+                  <div class="zi-mix-row"><span class="lbl">no stems yet</span></div>
                 )}
-                {s.mix.map((m) => {
-                  const pct = Math.min(100, Math.round((m.gain / Math.max(body.maxGain, 0.01)) * 100));
-                  return (
-                    <button
-                      key={m.id}
-                      class={`zi-mix-row stem${m.muted ? ' muted' : ''}`}
-                      title={m.muted ? 'unmute stem' : 'mute stem'}
-                      onClick={(e) => { e.stopPropagation(); callbacks.onToggleStemMute(m.id); }}
-                    >
-                      <span class="lbl">{m.label}</span>
-                      <span class="bar"><span class="fill" style={{ width: `${m.muted ? 0 : pct}%` }}></span></span>
-                      <span class="pct">{m.muted ? 'off' : pct}</span>
-                    </button>
-                  );
-                })}
+                {ownRows.map(renderMixRow)}
+                {nearbyRows.length > 0 && <div class="zi-mix-sub">nearby</div>}
+                {nearbyRows.map(renderMixRow)}
                 {(() => {
                   const dpct = Math.min(100, Math.round((s.droneLevel / DEEP_SPACE_DRONE_MAX_GAIN) * 100));
                   return (

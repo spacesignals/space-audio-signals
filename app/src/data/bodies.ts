@@ -1,8 +1,11 @@
 import type { CelestialBodyConfig } from '../types';
+import { AUDIO_STEMS } from './audioStems.generated';
 
 // Phase 1: Sun + 8 planets (9 bodies)
-// Audio stems are placeholders — will be replaced with composed stems
-// Audibility radius scaled roughly by body size (larger = audible from further)
+// Audio stems below are defaults; the real source of truth is the audio
+// folder. scripts/sync-stems.mjs scans public/audio/<id>/ and regenerates
+// AUDIO_STEMS on every build, and the loop after this array applies it — so
+// dropping a stem into a folder updates its config with no hand-edits here.
 
 export const BODIES: CelestialBodyConfig[] = [
   {
@@ -481,6 +484,16 @@ export const BODIES: CelestialBodyConfig[] = [
     color: '#A08060',
   },
 ];
+
+// Fold the folder-derived stems in: any body with an audio folder gets its
+// stems (and delay-layer stems) from the files actually present on disk.
+// Bodies without a folder are left untouched (they keep their pool config).
+for (const body of BODIES) {
+  const derived = AUDIO_STEMS[body.id];
+  if (!derived) continue;
+  body.stems = derived.stems;
+  if (derived.delayedStems.length) body.delayedStems = derived.delayedStems;
+}
 
 // Orbital data for moons (simple circular orbits)
 // Semi-major axis in km, period in Earth days

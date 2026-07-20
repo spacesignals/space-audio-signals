@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "sync:stems": "node scripts/sync-stems.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "build:mobile": "vite build --mode capacitor",

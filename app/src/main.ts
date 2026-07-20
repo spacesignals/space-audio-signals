@@ -222,6 +222,7 @@ class App {
       onVolumeChange: (volume) => this.audioEngine.setMasterVolume(volume),
       onBloomStrengthChange: (strength) => this.postProcessing.setBloomStrength(strength),
       onSpeedChange: (speed) => this.navigation.setSpeed(speed),
+      onToggleStemMute: (stemId) => this.audioEngine.toggleStemMute(stemId),
       onToggleBackgroundAudio: (enabled) => {
         backgroundAudioEnabled = enabled;
       },

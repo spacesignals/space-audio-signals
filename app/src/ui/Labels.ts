@@ -58,11 +58,14 @@ const CSS = `
   font-size: 10px; letter-spacing: 3px; text-transform: lowercase;
   white-space: nowrap; cursor: pointer; pointer-events: auto;
   text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.9);
-  opacity: 0; transition: opacity 0.45s ease, filter 0.3s ease;
+  /* Resting state: a deep grey whisper, barely legible. Hovering lifts the
+     label to its body's identity color at full brightness. */
+  color: #4a4a4a;
+  opacity: 0; transition: opacity 0.45s ease, color 0.3s ease, filter 0.3s ease;
   will-change: transform;
   padding: 3px 5px; /* generous hit target without visual weight */
 }
-.body-label:hover { filter: brightness(1.5); }
+.body-label:hover { color: var(--hue, #c8c8c8); filter: brightness(1.35); }
 `;
 
 interface LabelEntry {
@@ -73,6 +76,7 @@ interface LabelEntry {
   width: number; // measured once after mount
   targetOpacity: number;
   baseOpacity: number;
+  proximityFade: number; // 1 normally; -> 0 as the body grows to fill the view
 }
 
 /**
@@ -104,7 +108,8 @@ export class Labels {
       const el = document.createElement('div');
       el.className = 'body-label';
       el.textContent = config.name.toLowerCase();
-      el.style.color = config.identityColor ?? '#c8c8c8';
+      // Identity color lives in a CSS var so the resting grey can win until hover
+      el.style.setProperty('--hue', config.identityColor ?? '#c8c8c8');
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         this.onPick(config.id);
@@ -122,6 +127,7 @@ export class Labels {
         targetOpacity: 0,
         // planets carry the map; moons and small bodies whisper
         baseOpacity: priority <= 1 ? 0.88 : priority === 2 ? 0.72 : 0.68,
+        proximityFade: 1,
       });
     }
   }
@@ -176,6 +182,16 @@ export class Labels {
       const radiusPx = dist > 0 ? (entry.visualRadius / dist / tanHalfFov) * halfH : 0;
       const sy = ((1 - this._pos.y) / 2) * h - Math.min(radiusPx, h) - 8;
 
+      // When the body grows large in view (you're looking right at it), let the
+      // body sit "in front of" its own name: fade the label as its disk fills
+      // the frame, so the text recedes behind the planet instead of over it.
+      const fadeStart = h * 0.34;
+      const fadeEnd = h * 0.72;
+      entry.proximityFade =
+        radiusPx <= fadeStart
+          ? 1
+          : Math.max(0, 1 - (radiusPx - fadeStart) / (fadeEnd - fadeStart));
+
       screenData.set(entry.config.id, { x: sx, y: sy });
       rects.push({
         id: entry.config.id,
@@ -196,7 +212,7 @@ export class Labels {
         if (!sd) { this.applyOpacity(entry, 0); continue; }
         entry.targetOpacity = 0;
       } else {
-        entry.targetOpacity = entry.baseOpacity;
+        entry.targetOpacity = entry.baseOpacity * entry.proximityFade;
       }
       entry.el.style.transform = `translate(-50%, -100%) translate(${sd.x.toFixed(1)}px, ${sd.y.toFixed(1)}px)`;
       this.applyOpacity(entry, entry.targetOpacity);

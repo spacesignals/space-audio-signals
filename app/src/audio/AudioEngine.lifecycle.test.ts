@@ -40,6 +40,7 @@ function createMockAudioContext() {
     createOscillator: vi.fn(() => ({ ...oscillator, frequency: { value: 0 } })),
     createBufferSource: vi.fn(() => ({ ...bufferSource })),
     createBiquadFilter: vi.fn(() => ({ ...filter, frequency: { value: 0 }, Q: { value: 0 } })),
+    createWaveShaper: vi.fn(() => ({ curve: null, oversample: 'none', connect: vi.fn() })),
     createBuffer: vi.fn(() => ({ getChannelData: () => new Float32Array(44100 * 2) })),
     decodeAudioData: vi.fn(),
     resume: vi.fn(() => Promise.resolve()),

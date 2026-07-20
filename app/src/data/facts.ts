@@ -11,7 +11,7 @@ export interface BodyFacts {
 
 export const FACTS: Record<string, BodyFacts> = {
   sun: {
-    tagline: 'the star at the center of everything',
+    tagline: 'the star at the center of the solar system',
     factoids: [
       'Holds 99.8% of the solar system’s mass.',
       'Its core fuses 600 million tons of hydrogen every second.',
@@ -23,7 +23,7 @@ export const FACTS: Record<string, BodyFacts> = {
     ],
   },
   mercury: {
-    tagline: 'the smallest planet, sprinting around the sun',
+    tagline: 'the smallest planet and the closest to the sun',
     factoids: [
       'A year lasts just 88 Earth days — but one day-night cycle takes 176.',
       'Not the hottest planet, despite being closest to the Sun.',
@@ -35,7 +35,7 @@ export const FACTS: Record<string, BodyFacts> = {
     ],
   },
   venus: {
-    tagline: 'the hottest planet, wrapped in acid clouds',
+    tagline: 'the hottest planet in the solar system',
     factoids: [
       'Hotter than Mercury — its CO₂ atmosphere traps heat at ~465 °C.',
       'Spins backwards, and so slowly a day outlasts its year.',
@@ -47,7 +47,7 @@ export const FACTS: Record<string, BodyFacts> = {
     ],
   },
   earth: {
-    tagline: 'the only world known to harbor life',
+    tagline: 'the only planet known to support life',
     factoids: [
       'The only place in the universe where life is confirmed — so far.',
       'Oceans cover 71% of the surface and hold most of the planet’s habitat.',
@@ -59,7 +59,7 @@ export const FACTS: Record<string, BodyFacts> = {
     ],
   },
   mars: {
-    tagline: 'the rusty world we visit with robots',
+    tagline: 'the fourth planet from the sun',
     factoids: [
       'Home to Olympus Mons, the largest volcano in the solar system.',
       'Ancient rivers and lakes left their fingerprints all over its surface.',
@@ -71,7 +71,7 @@ export const FACTS: Record<string, BodyFacts> = {
     ],
   },
   jupiter: {
-    tagline: 'the giant that shaped the whole system',
+    tagline: 'the largest planet in the solar system',
     factoids: [
       'If it were a hollow shell, about 1,000 Earths could fit inside.',
       'The Great Red Spot is a storm larger than Earth, raging for centuries.',
@@ -83,7 +83,7 @@ export const FACTS: Record<string, BodyFacts> = {
     ],
   },
   saturn: {
-    tagline: 'the jewel of the solar system',
+    tagline: 'the second-largest planet, encircled by ice rings',
     factoids: [
       'All four giant planets have rings — none rival Saturn’s.',
       'The rings are mostly water ice, some pieces house-sized, some dust.',
@@ -95,7 +95,7 @@ export const FACTS: Record<string, BodyFacts> = {
     ],
   },
   uranus: {
-    tagline: 'the sideways ice giant',
+    tagline: 'an ice giant tilted onto its side',
     factoids: [
       'Rolls around the Sun on its side — its axis tilted 98 degrees.',
       'The coldest planetary atmosphere in the solar system: −224 °C.',
@@ -107,7 +107,7 @@ export const FACTS: Record<string, BodyFacts> = {
     ],
   },
   neptune: {
-    tagline: 'the windy edge of the planets',
+    tagline: 'the farthest planet from the sun',
     factoids: [
       'Supersonic winds top 2,000 km/h — the fastest in the solar system.',
       'Found by mathematics before telescopes: its gravity tugged on Uranus.',
@@ -119,7 +119,7 @@ export const FACTS: Record<string, BodyFacts> = {
     ],
   },
   pluto: {
-    tagline: 'the beloved dwarf at the kuiper belt’s door',
+    tagline: 'a dwarf planet in the kuiper belt',
     factoids: [
       'Smaller than Earth’s Moon, with mountains of water ice.',
       'Charon is so large the pair wobble around a shared point.',
@@ -131,7 +131,7 @@ export const FACTS: Record<string, BodyFacts> = {
     ],
   },
   moon: {
-    tagline: 'earth’s constant companion',
+    tagline: 'earth’s only natural satellite',
     factoids: [
       'The only other world humans have walked on.',
       'Drifts away from Earth about 3.8 cm every year.',
@@ -139,14 +139,14 @@ export const FACTS: Record<string, BodyFacts> = {
     ],
   },
   io: {
-    tagline: 'the most volcanic world known',
+    tagline: 'the most volcanically active body in the solar system',
     factoids: [
       'Hundreds of active volcanoes, some erupting lava fountains kilometers high.',
       'Jupiter’s tides knead its interior like dough, keeping it molten.',
     ],
   },
   europa: {
-    tagline: 'an ocean world under ice',
+    tagline: 'an icy moon with an ocean beneath its crust',
     factoids: [
       'Beneath its cracked ice shell hides an ocean with more water than Earth’s.',
       'One of the most promising places to look for life beyond Earth.',
@@ -160,108 +160,108 @@ export const FACTS: Record<string, BodyFacts> = {
     ],
   },
   callisto: {
-    tagline: 'the most cratered world known',
+    tagline: 'the most heavily cratered body in the solar system',
     factoids: [
       'Its ancient surface has recorded impacts for 4 billion years.',
       'May hide a salty ocean deep beneath the battered crust.',
     ],
   },
   titan: {
-    tagline: 'the moon with weather',
+    tagline: 'saturn’s largest moon, with a thick atmosphere',
     factoids: [
       'The only moon with a thick atmosphere — denser than Earth’s.',
       'Rain, rivers, and seas — but of liquid methane, not water.',
     ],
   },
   enceladus: {
-    tagline: 'the moon that snows on saturn',
+    tagline: 'an icy moon with water geysers at its south pole',
     factoids: [
       'Geysers at its south pole jet ocean water into space.',
       'That spray becomes part of Saturn’s E ring.',
     ],
   },
   mimas: {
-    tagline: 'the death star moon',
+    tagline: 'a small moon marked by one very large crater',
     factoids: [
       'Crater Herschel spans a third of its diameter.',
       'Recent evidence hints at a young ocean beneath its ice.',
     ],
   },
   rhea: {
-    tagline: 'saturn’s quiet second-largest moon',
+    tagline: 'saturn’s second-largest moon',
     factoids: [
       'A dirty snowball of ice and rock, thick with craters.',
     ],
   },
   dione: {
-    tagline: 'ice cliffs over a possible ocean',
+    tagline: 'an icy moon with bright fault cliffs',
     factoids: [
       'Bright wispy streaks are canyon walls of exposed ice.',
     ],
   },
   tethys: {
-    tagline: 'a moon nearly all ice',
+    tagline: 'a moon made almost entirely of water ice',
     factoids: [
       'So light it’s almost pure water ice.',
       'Ithaca Chasma is a canyon stretching three-quarters around it.',
     ],
   },
   iapetus: {
-    tagline: 'the two-toned moon',
+    tagline: 'a moon with one dark and one bright hemisphere',
     factoids: [
       'One hemisphere is coal-dark, the other bright ice.',
       'A mysterious equatorial ridge makes it look like a walnut.',
     ],
   },
   titania: {
-    tagline: 'uranus’s largest moon',
+    tagline: 'the largest moon of uranus',
     factoids: [
       'Canyons and fault valleys hint at an active past.',
     ],
   },
   oberon: {
-    tagline: 'the outermost of uranus’s big moons',
+    tagline: 'the outermost of uranus’s large moons',
     factoids: [
       'Old, dark, and heavily cratered — barely changed in eons.',
     ],
   },
   triton: {
-    tagline: 'the captured moon',
+    tagline: 'neptune’s largest moon, orbiting backwards',
     factoids: [
       'Orbits Neptune backwards — almost certainly a captured Kuiper Belt object.',
       'Nitrogen geysers erupt from its −235 °C surface.',
     ],
   },
   phobos: {
-    tagline: 'the doomed moon of mars',
+    tagline: 'the larger, inner moon of mars',
     factoids: [
       'Orbits so low it circles Mars three times a day.',
       'Spiraling inward — destined to break apart into a ring.',
     ],
   },
   charon: {
-    tagline: 'pluto’s giant partner',
+    tagline: 'the largest moon of pluto',
     factoids: [
       'Half of Pluto’s size — the pair are almost a double dwarf planet.',
       'A canyon system four times longer than the Grand Canyon.',
     ],
   },
   ceres: {
-    tagline: 'the only dwarf planet of the inner system',
+    tagline: 'a dwarf planet in the asteroid belt',
     factoids: [
       'The largest body in the asteroid belt — a third of its total mass.',
       'Bright salt deposits mark spots where briny water reached the surface.',
     ],
   },
   vesta: {
-    tagline: 'the brightest asteroid',
+    tagline: 'one of the largest bodies in the asteroid belt',
     factoids: [
       'Sometimes visible from Earth with the naked eye.',
       'Pieces knocked off Vesta fall to Earth as meteorites.',
     ],
   },
   eros: {
-    tagline: 'the first orbited asteroid',
+    tagline: 'a near-earth asteroid, the first ever orbited',
     factoids: [
       'A near-Earth asteroid shaped like a peanut.',
       'NEAR Shoemaker landed here in 2001 — the first asteroid landing.',

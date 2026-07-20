@@ -43,6 +43,10 @@ export class AudioEngine {
   // Last gain target per stem — skip rescheduling when target hasn't changed meaningfully
   private scheduledGains: Map<string, number> = new Map();
 
+  // Stems the user has muted from the info panel (keyed by stem id). Muted
+  // stems are forced to 0 gain regardless of distance until unmuted.
+  private mutedStems: Set<string> = new Set();
+
   // Arrival tracking for delayed stems: ctx.currentTime when a body most recently became
   // audible, and the set of bodies currently audible (to detect the not-audible -> audible edge).
   private bodyArrivalTime: Map<string, number> = new Map();
@@ -101,8 +105,13 @@ export class AudioEngine {
   }
 
   /**
-   * Deep space ambient: low-frequency oscillators + filtered noise.
+   * Deep space ambient: low, distorted pink noise.
    * Fades UP when the camera is far from all bodies.
+   *
+   * Pink noise (equal energy per octave) reads as a warm rushing bed rather
+   * than the harsh hiss of white noise; a waveshaper adds grit, and a low
+   * lowpass keeps the whole thing dark and sub-heavy. A slow LFO drifts the
+   * cutoff so the bed breathes instead of sitting static.
    */
   private initDeepSpaceDrone(): void {
     if (!this.ctx || !this.masterGain) return;
@@ -111,52 +120,68 @@ export class AudioEngine {
     this.droneGain.gain.value = 0;
     this.droneGain.connect(this.masterGain);
 
-    // Sub-bass drone
-    const osc1 = this.ctx.createOscillator();
-    osc1.type = 'sine';
-    osc1.frequency.value = 40;
-    const gain1 = this.ctx.createGain();
-    gain1.gain.value = 0.3;
-    osc1.connect(gain1);
-    gain1.connect(this.droneGain);
-    osc1.start();
-    this.droneNodes.push(osc1);
-
-    // Slow LFO modulating the sub
-    const lfo = this.ctx.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.05;
-    const lfoGain = this.ctx.createGain();
-    lfoGain.gain.value = 10;
-    lfo.connect(lfoGain);
-    lfoGain.connect(osc1.frequency);
-    lfo.start();
-    this.droneNodes.push(lfo);
-
-    // Filtered noise layer for texture
-    const bufferSize = this.ctx.sampleRate * 2;
+    // Generate a few seconds of pink noise (Paul Kellet's economical filter)
+    const bufferSize = this.ctx.sampleRate * 4;
     const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
     const output = noiseBuffer.getChannelData(0);
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
     for (let i = 0; i < bufferSize; i++) {
-      output[i] = Math.random() * 2 - 1;
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + white * 0.0555179;
+      b1 = 0.99332 * b1 + white * 0.0750759;
+      b2 = 0.969 * b2 + white * 0.153852;
+      b3 = 0.8665 * b3 + white * 0.3104856;
+      b4 = 0.55 * b4 + white * 0.5329522;
+      b5 = -0.7616 * b5 - white * 0.016898;
+      output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+      b6 = white * 0.115926;
     }
     const noiseSource = this.ctx.createBufferSource();
     noiseSource.buffer = noiseBuffer;
     noiseSource.loop = true;
 
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 200;
-    filter.Q.value = 1;
+    // Drive into a waveshaper for distortion/saturation
+    const drive = this.ctx.createGain();
+    drive.gain.value = 2.4;
 
-    const noiseGain = this.ctx.createGain();
-    noiseGain.gain.value = 0.08;
+    const shaper = this.ctx.createWaveShaper();
+    const k = 45; // distortion amount
+    const n = 2048;
+    const curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2) / n - 1;
+      curve[i] = ((3 + k) * x * 20 * Math.PI) / (180 * (Math.PI + k * Math.abs(x)));
+    }
+    shaper.curve = curve;
+    shaper.oversample = '4x';
 
-    noiseSource.connect(filter);
-    filter.connect(noiseGain);
-    noiseGain.connect(this.droneGain);
+    // Keep it low and dark
+    const lowpass = this.ctx.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 320;
+    lowpass.Q.value = 0.7;
+
+    const bedGain = this.ctx.createGain();
+    bedGain.gain.value = 0.5;
+
+    noiseSource.connect(drive);
+    drive.connect(shaper);
+    shaper.connect(lowpass);
+    lowpass.connect(bedGain);
+    bedGain.connect(this.droneGain);
     noiseSource.start();
     this.droneNodes.push(noiseSource);
+
+    // Slow cutoff drift so the bed shifts and breathes
+    const lfo = this.ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.04;
+    const lfoGain = this.ctx.createGain();
+    lfoGain.gain.value = 110;
+    lfo.connect(lfoGain);
+    lfoGain.connect(lowpass.frequency);
+    lfo.start();
+    this.droneNodes.push(lfo);
   }
 
   /**
@@ -483,16 +508,21 @@ export class AudioEngine {
     for (const [stemId, stem] of this.stems) {
       if (stem.bodyId !== bodyId || !stem.gainNode) continue;
 
-      if (targetGain > 0.001) stem.lastActiveTime = perfNow;
+      // Muted stems are held at silence but kept alive (not evicted) so the
+      // user can unmute instantly without a reload.
+      const muted = this.mutedStems.has(stemId);
+      const effTarget = muted ? 0 : targetGain;
+
+      if (targetGain > 0.001 || muted) stem.lastActiveTime = perfNow;
 
       // Skip rescheduling if target hasn't changed — avoids micro-discontinuities
       // from cancelScheduledValues interrupting in-flight exponential curves every frame
       const prev = this.scheduledGains.get(stemId) ?? -1;
-      if (Math.abs(prev - targetGain) < 0.004) continue;
+      if (Math.abs(prev - effTarget) < 0.004) continue;
 
-      this.scheduledGains.set(stemId, targetGain);
+      this.scheduledGains.set(stemId, effTarget);
       stem.gainNode.gain.cancelScheduledValues(now);
-      stem.gainNode.gain.setTargetAtTime(targetGain, now, CROSSFADE_TIME_CONSTANT);
+      stem.gainNode.gain.setTargetAtTime(effTarget, now, CROSSFADE_TIME_CONSTANT);
     }
   }
 
@@ -546,20 +576,44 @@ export class AudioEngine {
    * gain (the value the audio thread is actually at, mid-crossfade included).
    * Used by the info panel — "what you're hearing and why".
    */
-  getBodyMix(bodyId: string): { label: string; gain: number }[] {
-    const rows: { label: string; gain: number }[] = [];
-    for (const [, stem] of this.stems) {
+  getBodyMix(bodyId: string): { id: string; label: string; gain: number; muted: boolean }[] {
+    const rows: { id: string; label: string; gain: number; muted: boolean }[] = [];
+    for (const [stemId, stem] of this.stems) {
       if (stem.bodyId !== bodyId || !stem.gainNode) continue;
       // 'mercury/3FreudianPad.m4a' -> '3freudianpad'; delay layers marked
       const file = stem.url.split('/').pop() ?? stem.url;
       const base = file.replace(/\.[a-z0-9]+$/i, '').toLowerCase();
       rows.push({
+        id: stemId,
         label: stem.isDelayed ? `${base} (late)` : base,
         gain: stem.gainNode.gain.value,
+        muted: this.mutedStems.has(stemId),
       });
     }
     rows.sort((a, b) => a.label.localeCompare(b.label));
     return rows;
+  }
+
+  /**
+   * Toggle mute for a single stem (from the info panel). Applied immediately so
+   * the click feels instant even if the body isn't being re-mixed this frame.
+   */
+  toggleStemMute(stemId: string): void {
+    const muted = !this.mutedStems.has(stemId);
+    if (muted) this.mutedStems.add(stemId);
+    else this.mutedStems.delete(stemId);
+
+    const stem = this.stems.get(stemId);
+    if (!this.ctx || !stem?.gainNode) return;
+    if (muted) {
+      // Ramp to silence now.
+      stem.gainNode.gain.cancelScheduledValues(this.ctx.currentTime);
+      stem.gainNode.gain.setTargetAtTime(0, this.ctx.currentTime, CROSSFADE_TIME_CONSTANT);
+      this.scheduledGains.set(stemId, 0);
+    } else {
+      // Force setStemGains to re-ramp up to the live distance target next frame.
+      this.scheduledGains.delete(stemId);
+    }
   }
 
   /** Current deep-space drone level (0..DEEP_SPACE_DRONE_MAX_GAIN). */

@@ -126,6 +126,15 @@ const CSS = `
   font-size: 9px; letter-spacing: 0.5px; color: var(--soft);
   min-width: 22px; text-align: right; font-variant-numeric: tabular-nums;
 }
+/* stem rows are clickable to mute/unmute */
+.zi-mix-row.stem {
+  background: none; border: none; width: 100%; padding: 0;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.zi-mix-row.stem .lbl { transition: color 0.3s; }
+.zi-mix-row.stem:hover .lbl { color: var(--text); }
+.zi-mix-row.stem.muted .lbl { text-decoration: line-through; color: var(--faint); }
+.zi-mix-row.stem.muted .pct { color: var(--faint); }
 .zi-close {
   background: none; border: none; cursor: pointer;
   font-family: system-ui, sans-serif;
@@ -383,6 +392,14 @@ interface HUDCallbacks {
   onVolumeChange: (volume: number) => void;
   onBloomStrengthChange: (strength: number) => void;
   onSpeedChange: (speed: number) => void;
+  onToggleStemMute: (stemId: string) => void;
+}
+
+interface MixRow {
+  id: string;
+  label: string;
+  gain: number;
+  muted: boolean;
 }
 
 interface HUDState {
@@ -394,7 +411,7 @@ interface HUDState {
   simDate: Date | null;
   timeRateLabel: string;
   timeLive: boolean;
-  mix: { label: string; gain: number }[];
+  mix: MixRow[];
   droneLevel: number;
   speedFlashUntil: number;
 }
@@ -774,11 +791,16 @@ function HUDApp({
                 {s.mix.map((m) => {
                   const pct = Math.min(100, Math.round((m.gain / Math.max(body.maxGain, 0.01)) * 100));
                   return (
-                    <div class="zi-mix-row">
+                    <button
+                      key={m.id}
+                      class={`zi-mix-row stem${m.muted ? ' muted' : ''}`}
+                      title={m.muted ? 'unmute stem' : 'mute stem'}
+                      onClick={(e) => { e.stopPropagation(); callbacks.onToggleStemMute(m.id); }}
+                    >
                       <span class="lbl">{m.label}</span>
-                      <span class="bar"><span class="fill" style={{ width: `${pct}%` }}></span></span>
-                      <span class="pct">{pct}</span>
-                    </div>
+                      <span class="bar"><span class="fill" style={{ width: `${m.muted ? 0 : pct}%` }}></span></span>
+                      <span class="pct">{m.muted ? 'off' : pct}</span>
+                    </button>
                   );
                 })}
                 {(() => {
@@ -938,6 +960,7 @@ export class HUD {
     onVolumeChange: () => {},
     onBloomStrengthChange: () => {},
     onSpeedChange: () => {},
+    onToggleStemMute: () => {},
   };
   private mountEl: HTMLDivElement;
   private bodies: CelestialBodyConfig[] = [];
@@ -984,7 +1007,7 @@ export class HUD {
   }
 
   /** Live audio mix for the selected body's info panel. */
-  updateMix(mix: { label: string; gain: number }[], droneLevel: number): void {
+  updateMix(mix: MixRow[], droneLevel: number): void {
     hudState = { ...hudState, mix, droneLevel };
     rerenderHUD?.();
   }

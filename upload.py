@@ -116,8 +116,14 @@ def main() -> None:
     remote = remote_files(sftp, REMOTE_DIR)
     print(f"Remote: {len(remote)} files in {REMOTE_DIR}")
 
+    # Size comparison alone misses HTML: a new build swaps the hashed bundle
+    # name (index-<hash>.js) for another of identical length, so index.html's
+    # byte size never changes even though its content does. Always re-upload
+    # HTML — otherwise every deploy deletes the old bundle but leaves the live
+    # index.html pointing at it (404 → broken site).
     to_upload = [rel for rel, f in local.items()
-                 if rel not in remote or remote[rel] != f.stat().st_size]
+                 if rel not in remote or remote[rel] != f.stat().st_size
+                 or rel.endswith(".html")]
     to_delete = [rel for rel in remote if rel not in local]
     # index.html last: everything it references must already be in place
     to_upload.sort(key=lambda r: (r == "index.html", r))

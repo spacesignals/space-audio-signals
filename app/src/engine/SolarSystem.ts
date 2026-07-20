@@ -195,30 +195,32 @@ export class SolarSystem {
           const t = (dist - innerR) / (outerR - innerR);
           uvs.setXY(i, t, 0.5);
         }
-        // Saturn: bright golden (real texture loads below). Uranus: narrow,
-        // dark charcoal-gray. Neptune: very faint dusty rings.
-        const ringLook: Record<string, { color: number; opacity: number }> = {
-          saturn: { color: 0xc8b070, opacity: 0.6 },
-          uranus: { color: 0x76808c, opacity: 0.18 },
-          neptune: { color: 0x8888aa, opacity: 0.12 },
+        // Procedurally banded rings with real gaps: Saturn broad and bright
+        // with the Cassini + Encke divisions; Uranus/Neptune narrow and faint.
+        const ringLook: Record<
+          string,
+          { color: string; opacity: number; gaps: { at: number; width: number; depth: number }[] }
+        > = {
+          saturn: {
+            color: '#d8c69a',
+            opacity: 0.95,
+            gaps: [
+              { at: 0.08, width: 0.05, depth: 0.5 }, // C ring / inner falloff
+              { at: 0.55, width: 0.05, depth: 0.92 }, // Cassini Division
+              { at: 0.9, width: 0.02, depth: 0.7 }, // Encke Gap
+            ],
+          },
+          uranus: { color: '#8791a0', opacity: 0.5, gaps: [{ at: 0.5, width: 0.22, depth: 0.75 }] },
+          neptune: { color: '#9195b6', opacity: 0.34, gaps: [{ at: 0.42, width: 0.26, depth: 0.6 }] },
         };
-        const look = ringLook[config.id] ?? { color: 0x9a9a9a, opacity: 0.3 };
+        const look = ringLook[config.id] ?? { color: '#9a9a9a', opacity: 0.5, gaps: [] };
+        const ringTex = this.makeRingTexture(look.color, look.opacity, look.gaps);
         const ringMat = new THREE.MeshBasicMaterial({
-          color: look.color,
+          map: ringTex,
           side: THREE.DoubleSide,
           transparent: true,
-          opacity: look.opacity,
           depthWrite: false, // transparent rings must not punch holes in what's behind them
         });
-        // Load ring texture if Saturn
-        if (config.id === 'saturn') {
-          this.textureLoader.load(`${import.meta.env.BASE_URL}textures/saturn_ring.png`, (texture) => {
-            this.prepColorTexture(texture);
-            ringMat.map = texture;
-            ringMat.color.set(0xffffff);
-            ringMat.needsUpdate = true;
-          });
-        }
         const ringMesh = new THREE.Mesh(ringGeom, ringMat);
         ringMesh.rotation.x = Math.PI / 2 * 0.9; // slight tilt
         mesh.add(ringMesh);
@@ -407,6 +409,74 @@ export class SolarSystem {
       side: THREE.FrontSide,
     });
     return new THREE.Mesh(geometry, material);
+  }
+
+  /**
+   * Procedural planetary ring texture: a 1-D radial strip (inner→outer maps to
+   * U via the ring's remapped UVs) of layered ringlets with soft density noise,
+   * real division gaps, and faded inner/outer edges. RGBA — the alpha channel
+   * carries the ringlet structure so gaps read as genuine transparency.
+   */
+  private makeRingTexture(
+    baseColor: string,
+    opacity: number,
+    gaps: { at: number; width: number; depth: number }[]
+  ): THREE.CanvasTexture {
+    const w = 1024;
+    const h = 8;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d')!;
+    const img = ctx.createImageData(w, h);
+    const base = new THREE.Color(baseColor);
+    const hashNoise = (x: number): number => {
+      const s = Math.sin(x * 127.1) * 43758.5453;
+      return s - Math.floor(s);
+    };
+
+    for (let x = 0; x < w; x++) {
+      const t = x / (w - 1); // 0 = inner edge, 1 = outer edge
+      // Layered ringlets: several spatial frequencies plus fine noise
+      let d =
+        0.55 +
+        0.22 * Math.sin(t * Math.PI * 22) +
+        0.14 * Math.sin(t * Math.PI * 57 + 1.3) +
+        0.1 * Math.sin(t * Math.PI * 113 + 2.1) +
+        0.12 * (hashNoise(t * 260) - 0.5);
+      d = Math.max(0, Math.min(1, d));
+      // Carve division gaps (smoothstep dip so edges aren't hard)
+      for (const g of gaps) {
+        const dist = Math.abs(t - g.at);
+        if (dist < g.width) {
+          const f = 1 - dist / g.width;
+          d *= 1 - g.depth * (f * f * (3 - 2 * f));
+        }
+      }
+      // Soft inner/outer edges
+      const edge = Math.min(1, t / 0.04) * Math.min(1, (1 - t) / 0.05);
+      const a = Math.max(0, Math.min(1, d * edge)) * opacity;
+      // Denser ringlets read a touch brighter
+      const shade = 0.7 + 0.5 * d;
+      const r = Math.min(255, base.r * 255 * shade);
+      const gc = Math.min(255, base.g * 255 * shade);
+      const b = Math.min(255, base.b * 255 * shade);
+      for (let y = 0; y < h; y++) {
+        const i = (y * w + x) * 4;
+        img.data[i] = r;
+        img.data[i + 1] = gc;
+        img.data[i + 2] = b;
+        img.data[i + 3] = a * 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = this.maxAnisotropy;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    this.uploadTexture?.(tex);
+    return tex;
   }
 
   private createEarthMaterial(): THREE.ShaderMaterial {

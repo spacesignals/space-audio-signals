@@ -115,7 +115,8 @@ export const BODIES: CelestialBodyConfig[] = [
     textureFile: 'saturn.jpg',
     color: '#E8D191',
     atmosphereColor: '#F0DCA0',
-    atmosphereIntensity: 0.2,
+    // Kept low so the additive limb glow doesn't wash out the banded texture.
+    atmosphereIntensity: 0.05,
     hasRings: true,
     ringInnerRadiusKm: 74_500,
     ringOuterRadiusKm: 140_220,
@@ -263,8 +264,10 @@ export const BODIES: CelestialBodyConfig[] = [
     pool: 'icy-moon',
     textureFile: 'titan.jpg',
     color: '#D4A030',
+    // Titan really does have an orange haze — the only moon that does — but keep
+    // it a faint hint rather than a glowing shell (all other moons have none).
     atmosphereColor: '#E8C060',
-    atmosphereIntensity: 0.5,
+    atmosphereIntensity: 0.12,
   },
   {
     id: 'enceladus',

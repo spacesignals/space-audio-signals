@@ -4,10 +4,50 @@
 // Drop a stem into the folder and the audio config updates itself.
 export const AUDIO_STEMS: Record<string, { stems: string[]; delayedStems: string[] }> =
 {
+  "callisto": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "ceres": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "charon": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "dione": {
+    "stems": [],
+    "delayedStems": []
+  },
   "earth": {
     "stems": [
       "earth/Barker_Emaj-drone.m4a"
     ],
+    "delayedStems": []
+  },
+  "enceladus": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "eros": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "europa": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "ganymede": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "iapetus": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "io": {
+    "stems": [],
     "delayedStems": []
   },
   "jupiter": {
@@ -36,11 +76,35 @@ export const AUDIO_STEMS: Record<string, { stems: string[]; delayedStems: string
     ],
     "delayedStems": []
   },
+  "mimas": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "moon": {
+    "stems": [],
+    "delayedStems": []
+  },
   "neptune": {
     "stems": [
       "neptune/drone-01.m4a",
       "neptune/pad-01.m4a"
     ],
+    "delayedStems": []
+  },
+  "oberon": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "phobos": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "pluto": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "rhea": {
+    "stems": [],
     "delayedStems": []
   },
   "saturn": {
@@ -56,6 +120,22 @@ export const AUDIO_STEMS: Record<string, { stems: string[]; delayedStems: string
     ],
     "delayedStems": []
   },
+  "tethys": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "titan": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "titania": {
+    "stems": [],
+    "delayedStems": []
+  },
+  "triton": {
+    "stems": [],
+    "delayedStems": []
+  },
   "uranus": {
     "stems": [
       "uranus/Barker_Gmin-drone.m4a"
@@ -67,6 +147,10 @@ export const AUDIO_STEMS: Record<string, { stems: string[]; delayedStems: string
       "venus/pad-01.m4a",
       "venus/texture-01.m4a"
     ],
+    "delayedStems": []
+  },
+  "vesta": {
+    "stems": [],
     "delayedStems": []
   }
 };

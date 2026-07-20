@@ -33,6 +33,9 @@ export interface AudioStem {
   source: AudioBufferSourceNode | null;
   gainNode: GainNode | null;
   pannerNode: PannerNode | null;
+  // Small un-panned center bleed so a hard-panned body is never fully silent
+  // in one ear (guarantees a minimum level in both channels).
+  centerGain: GainNode | null;
   state: 'unloaded' | 'loading' | 'ready' | 'failed' | 'permanently-failed' | 'evicted';
   url: string;
   lastActiveTime: number; // performance.now() when gain was last > 0

@@ -351,8 +351,12 @@ class App {
     const pos = this.solarSystem.getBodyPosition(bodyId);
     if (!pos) return;
     const visualRadius = this.solarSystem.getBodyVisualRadius(bodyId) ?? undefined;
-    this.navigation.flyTo(pos, visualRadius);
     const body = BODIES.find(b => b.id === bodyId);
+    // Start decoding the target's audio now and hold the arrival until it's
+    // ready — you should never reach a planet before its sound does.
+    if (body) this.audioEngine.prefetchBody(body);
+    const readyCheck = body ? () => this.audioEngine.stemsReady(body) : undefined;
+    this.navigation.flyTo(pos, visualRadius, undefined, readyCheck);
     if (body) this.hud.showBodyInfo(body);
     // Keep the URL shareable (replaceState: no history spam, no scroll jump)
     if (location.hash !== `#${bodyId}`) {

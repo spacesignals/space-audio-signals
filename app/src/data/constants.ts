@@ -39,6 +39,14 @@ export const STEM_MAX_RETRIES = 1; // retry once after cooldown, then permanentl
 export const STEM_EVICTION_DELAY_MS = 30_000; // evict silent stems after 30s
 export const STEM_DELAY_SECONDS = 60; // delay/ layer starts this many seconds after a body becomes audible
 export const DELAYED_STEM_FADE_IN_TIME_CONSTANT = 1.5; // seconds — fade-in when a delayed stem's source starts, avoids a pop
+// Fraction of each stem mixed un-panned (dead center) so a hard-panned body is
+// never fully silent in one ear — keeps the quiet ear at ~6% of the loud ear.
+export const PAN_CENTER_BLEED = 0.07;
+// Time constant for smoothing panner position moves — prevents zipper/pan
+// clicks when a body's position snaps (e.g. 1 Hz ephemeris updates).
+export const PANNER_SMOOTH_TIME_CONSTANT = 0.04; // seconds
+// Time constant for smoothing master-volume changes (slider drags, ducking).
+export const MASTER_VOLUME_SMOOTH_TIME_CONSTANT = 0.05; // seconds
 
 // Starfield
 export const STARFIELD_RADIUS = 50_000; // units

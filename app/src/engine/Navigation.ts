@@ -66,6 +66,13 @@ export class Navigation {
   private travelStartTime = 0;
   private travelDuration = FOCUS_TRAVEL_DURATION_MS;
   private onTravelComplete: (() => void) | null = null;
+  // Optional gate: focus travel holds just short of arrival until this returns
+  // true (the target body's audio is ready), so you never reach a silent planet.
+  private travelReadyCheck: (() => boolean) | null = null;
+  private travelHolding = false;
+  private travelHoldStart = 0;
+  private static readonly TRAVEL_HOLD_RAW = 0.72; // hold at this raw progress
+  private static readonly TRAVEL_HOLD_MAX_MS = 8000; // give up waiting after this
 
   // Orbit-on-click state (orbit body before settling)
   private orbitTarget: THREE.Vector3 | null = null;
@@ -594,11 +601,37 @@ export class Navigation {
     return this._lookAtQuat;
   }
 
+  /** Rebase the travel clock so the eased curve continues from a held raw t. */
+  private resumeTravelFromHold(holdRaw: number): void {
+    this.travelStartTime = performance.now() - holdRaw * this.travelDuration;
+    this.travelHolding = false;
+  }
+
   private updateFocusTravel(): void {
     if (!this.travelStart || !this.travelEnd) return;
 
-    const elapsed = performance.now() - this.travelStartTime;
-    const t = easeInOutQuad(Math.min(elapsed / this.travelDuration, 1));
+    const HOLD_RAW = Navigation.TRAVEL_HOLD_RAW;
+    let rawT = Math.min((performance.now() - this.travelStartTime) / this.travelDuration, 1);
+
+    // Audio-readiness gate: hold near (but not at) arrival until the target's
+    // stems are decoded, then resume smoothly. easeInOutQuad is already
+    // decelerating here, so the hold reads as the approach settling, not a stop.
+    const ready =
+      this.mode !== 'focus-travel' || !this.travelReadyCheck || this.travelReadyCheck();
+    if (!ready && rawT >= HOLD_RAW) {
+      if (!this.travelHolding) { this.travelHolding = true; this.travelHoldStart = performance.now(); }
+      if (performance.now() - this.travelHoldStart < Navigation.TRAVEL_HOLD_MAX_MS) {
+        rawT = HOLD_RAW; // freeze until ready (or timeout)
+      } else {
+        this.resumeTravelFromHold(HOLD_RAW); // waited long enough — proceed anyway
+        rawT = Math.min((performance.now() - this.travelStartTime) / this.travelDuration, 1);
+      }
+    } else if (this.travelHolding && ready) {
+      this.resumeTravelFromHold(HOLD_RAW);
+      rawT = Math.min((performance.now() - this.travelStartTime) / this.travelDuration, 1);
+    }
+
+    const t = easeInOutQuad(rawT);
 
     // Interpolate position
     this.camera.position.lerpVectors(this.travelStart, this.travelEnd, t);
@@ -635,7 +668,16 @@ export class Navigation {
    * Fly the camera to a body, orbit it once with a dynamic elliptical path, then settle.
    * Body subtends ~1/3 of viewport height at the destination.
    */
-  flyTo(target: THREE.Vector3, bodyVisualRadius?: number, duration?: number): void {
+  flyTo(
+    target: THREE.Vector3,
+    bodyVisualRadius?: number,
+    duration?: number,
+    readyCheck?: () => boolean
+  ): void {
+    // Arm the audio-readiness gate for whichever travel this resolves into.
+    this.travelReadyCheck = readyCheck ?? null;
+    this.travelHolding = false;
+
     // Mid-flyby: redirect destination without interrupting the arc
     if (this.mode === 'departure-flyby') {
       this.pendingTarget = target.clone();

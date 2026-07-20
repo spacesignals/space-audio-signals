@@ -10,6 +10,9 @@ import {
   STEM_EVICTION_DELAY_MS,
   STEM_DELAY_SECONDS,
   DELAYED_STEM_FADE_IN_TIME_CONSTANT,
+  PAN_CENTER_BLEED,
+  PANNER_SMOOTH_TIME_CONSTANT,
+  MASTER_VOLUME_SMOOTH_TIME_CONSTANT,
 } from '../data/constants';
 
 /**
@@ -385,6 +388,7 @@ export class AudioEngine {
         source: null,
         gainNode: null,
         pannerNode: null,
+        centerGain: null,
         state: 'loading',
         url: this.audioBasePath + url,
         lastActiveTime: now,
@@ -431,7 +435,12 @@ export class AudioEngine {
       stem.gainNode = this.ctx.createGain();
       stem.gainNode.gain.value = 0;
 
-      // Chain: source -> panner -> gain -> master
+      // Center-bleed: a small un-panned copy so the quiet ear never hits zero.
+      stem.centerGain = this.ctx.createGain();
+      stem.centerGain.gain.value = PAN_CENTER_BLEED;
+      stem.centerGain.connect(stem.gainNode);
+
+      // Chain: source -> panner -> gain -> master, with source -> center -> gain
       stem.pannerNode.connect(stem.gainNode);
       stem.gainNode.connect(this.masterGain);
 
@@ -446,6 +455,7 @@ export class AudioEngine {
         source.buffer = stem.buffer;
         source.loop = true;
         source.connect(stem.pannerNode);
+        if (stem.centerGain) source.connect(stem.centerGain);
         source.start();
         stem.source = source;
         stem.started = true;
@@ -485,6 +495,7 @@ export class AudioEngine {
     source.buffer = stem.buffer;
     source.loop = true;
     source.connect(stem.pannerNode);
+    if (stem.centerGain) source.connect(stem.centerGain);
     source.start();
     stem.source = source;
     stem.started = true;
@@ -542,9 +553,11 @@ export class AudioEngine {
       try { stem.source?.stop(); } catch { /* ignore */ }
       stem.source?.disconnect();
       stem.pannerNode?.disconnect();
+      stem.centerGain?.disconnect();
       stem.gainNode?.disconnect();
       stem.source = null;
       stem.pannerNode = null;
+      stem.centerGain = null;
       stem.gainNode = null;
       stem.buffer = null;
       stem.state = 'evicted';
@@ -556,15 +569,20 @@ export class AudioEngine {
    * Update panner node positions for all active stems based on body positions.
    */
   private updatePannerPositions(): void {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const τ = PANNER_SMOOTH_TIME_CONSTANT;
     for (const [, stem] of this.stems) {
       if (!stem.pannerNode || stem.state !== 'ready') continue;
       const pos = this.bodyPositions.get(stem.bodyId);
       if (!pos) continue;
 
       if (stem.pannerNode.positionX) {
-        stem.pannerNode.positionX.value = pos[0];
-        stem.pannerNode.positionY.value = pos[1];
-        stem.pannerNode.positionZ.value = pos[2];
+        // setTargetAtTime (not .value=) so a snapping body position never
+        // produces a pan click — the pan glides on the audio thread.
+        stem.pannerNode.positionX.setTargetAtTime(pos[0], t, τ);
+        stem.pannerNode.positionY.setTargetAtTime(pos[1], t, τ);
+        stem.pannerNode.positionZ.setTargetAtTime(pos[2], t, τ);
       } else {
         stem.pannerNode.setPosition(pos[0], pos[1], pos[2]);
       }
@@ -616,6 +634,32 @@ export class AudioEngine {
     }
   }
 
+  /**
+   * Force-load a body's stems now, regardless of distance or scrubbing. Called
+   * when the user flies to a body so its audio can be decoded during the trip.
+   */
+  prefetchBody(config: CelestialBodyConfig): void {
+    if (!this.ctx || !this.started) return;
+    this.ensureStemsLoaded(config);
+  }
+
+  /**
+   * True once every primary (non-delayed) stem for a body is decoded and ready
+   * — or there's nothing to load. Stems that failed permanently count as ready
+   * so a missing file never stalls an arrival. Used to gate focus travel so the
+   * camera doesn't reach a body before its audio does.
+   */
+  stemsReady(config: CelestialBodyConfig): boolean {
+    // Before the audio context exists (pre-gesture) nothing can load — don't stall.
+    if (!this.ctx || !this.started) return true;
+    for (const url of config.stems) {
+      const stem = this.stems.get(`${config.id}:${url}`);
+      if (!stem) return false;
+      if (stem.state !== 'ready' && stem.state !== 'permanently-failed') return false;
+    }
+    return true;
+  }
+
   /** Current deep-space drone level (0..DEEP_SPACE_DRONE_MAX_GAIN). */
   getDroneLevel(): number {
     return this.droneGain?.gain.value ?? 0;
@@ -647,9 +691,10 @@ export class AudioEngine {
   }
 
   setMasterVolume(volume: number): void {
-    if (this.masterGain) {
-      this.masterGain.gain.value = Math.max(0, Math.min(1, volume));
-    }
+    if (!this.masterGain || !this.ctx) return;
+    const v = Math.max(0, Math.min(1, volume));
+    // Smooth so slider drags don't zipper the whole mix.
+    this.masterGain.gain.setTargetAtTime(v, this.ctx.currentTime, MASTER_VOLUME_SMOOTH_TIME_CONSTANT);
   }
 
   /** Suspend the AudioContext (pause all audio processing). */

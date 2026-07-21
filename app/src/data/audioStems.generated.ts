@@ -100,7 +100,9 @@ export const AUDIO_STEMS: Record<string, { stems: string[]; delayedStems: string
     "delayedStems": []
   },
   "pluto": {
-    "stems": [],
+    "stems": [
+      "pluto/Atotallydifferentthing.m4a"
+    ],
     "delayedStems": []
   },
   "rhea": {
@@ -144,6 +146,7 @@ export const AUDIO_STEMS: Record<string, { stems: string[]; delayedStems: string
   },
   "venus": {
     "stems": [
+      "venus/AMBienT-19.m4a",
       "venus/pad-01.m4a",
       "venus/texture-01.m4a"
     ],

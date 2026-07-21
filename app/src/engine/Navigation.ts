@@ -195,6 +195,15 @@ export class Navigation {
     );
   }
 
+  /**
+   * World position of the body the camera is orbiting, or null. Used to resolve
+   * the focused body by its own position — not the camera's nearest body, which
+   * can flip to a moon passing close during orbit and duck the planet in and out.
+   */
+  getOrbitTarget(): THREE.Vector3 | null {
+    return this.orbitTarget ? this.orbitTarget.clone() : null;
+  }
+
   private enterFreeFlight(): void {
     this.mode = 'free-flight';
     const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');

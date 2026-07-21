@@ -336,8 +336,11 @@ class App {
       this.audioEngine.setBodyPositions(positions);
       this.audioEngine.setTimeDilation(!this.simClock.isLive());
       // While orbiting/focused on a body, duck every other body to silence.
+      // Resolve the focus by the ORBIT TARGET's position (the body being
+      // orbited), not the camera's nearest body — otherwise a moon swinging
+      // close mid-orbit would steal focus and pulse the planet's audio.
       this.audioEngine.setFocusedBody(
-        this.navigation.isFocusing() && distances.length ? distances[0].bodyId : null
+        this.navigation.isFocusing() ? this.bodyNearestTo(this.navigation.getOrbitTarget(), positions) : null
       );
       this.audioEngine.update(distances);
     }
@@ -389,6 +392,24 @@ class App {
     if (id && BODIES.some(b => b.id === id)) {
       this.focusBody(id);
     }
+  }
+
+  /** Body whose position is closest to a world point (e.g. the orbit target). */
+  private bodyNearestTo(
+    target: THREE.Vector3 | null,
+    positions: Map<string, [number, number, number]>
+  ): string | null {
+    if (!target) return null;
+    let best: string | null = null;
+    let bestD = Infinity;
+    for (const [id, p] of positions) {
+      const dx = p[0] - target.x;
+      const dy = p[1] - target.y;
+      const dz = p[2] - target.z;
+      const d = dx * dx + dy * dy + dz * dz;
+      if (d < bestD) { bestD = d; best = id; }
+    }
+    return best;
   }
 
   /** Compute sorted distances from camera to all bodies. Shared by audio + HUD. */

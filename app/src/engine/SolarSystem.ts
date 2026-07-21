@@ -184,8 +184,9 @@ export class SolarSystem {
       if (config.hasRings && config.ringInnerRadiusKm && config.ringOuterRadiusKm) {
         const innerR = (config.ringInnerRadiusKm / KM_PER_UNIT) * RING_VISUAL_SCALE;
         const outerR = (config.ringOuterRadiusKm / KM_PER_UNIT) * RING_VISUAL_SCALE;
-        const ringGeom = new THREE.RingGeometry(innerR, outerR, 128);
-        // Remap UVs: texture maps radially (inner→outer), not around the ring
+        const ringGeom = new THREE.RingGeometry(innerR, outerR, 220);
+        // Remap UVs: U = radial (inner→outer), V = angle around the ring, so
+        // the texture carries both ringlet structure and azimuthal clumping.
         const uvs = ringGeom.attributes.uv;
         const pos = ringGeom.attributes.position;
         for (let i = 0; i < uvs.count; i++) {
@@ -193,7 +194,8 @@ export class SolarSystem {
           const z = pos.getY(i); // RingGeometry is in XY plane
           const dist = Math.sqrt(x * x + z * z);
           const t = (dist - innerR) / (outerR - innerR);
-          uvs.setXY(i, t, 0.5);
+          const ang = Math.atan2(z, x) / (Math.PI * 2) + 0.5;
+          uvs.setXY(i, t, ang);
         }
         // Procedurally banded rings with real gaps: Saturn broad and bright
         // with the Cassini + Encke divisions; Uranus/Neptune narrow and faint.
@@ -425,8 +427,9 @@ export class SolarSystem {
     opacity: number,
     gaps: { at: number; width: number; depth: number }[]
   ): THREE.CanvasTexture {
-    const w = 2048;
-    const h = 8;
+    const w = 2048; // radial resolution (U = inner→outer)
+    const h = 512; // angular resolution (V = around the ring)
+    const TWO_PI = Math.PI * 2;
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
@@ -438,20 +441,22 @@ export class SolarSystem {
       return s - Math.floor(s);
     };
 
+    // Precompute the radial profile once per column (ringlets, gaps, edges,
+    // grain) — this is the concentric structure of the rings.
+    const radDensity = new Float32Array(w);
+    const radGrain = new Float32Array(w);
     for (let x = 0; x < w; x++) {
-      const t = x / (w - 1); // 0 = inner edge, 1 = outer edge
-      // Layered ringlets: broad density waves plus several octaves of fine
-      // grain so the ring reads as countless particles, not a solid sheet.
+      const t = x / (w - 1);
       let d =
-        0.62 +
-        0.16 * Math.sin(t * Math.PI * 22) +
-        0.1 * Math.sin(t * Math.PI * 57 + 1.3) +
-        0.08 * Math.sin(t * Math.PI * 113 + 2.1) +
-        0.1 * (hashNoise(t * 260) - 0.5) +
-        0.09 * (hashNoise(t * 620) - 0.5) +
-        0.06 * (hashNoise(t * 1490) - 0.5);
+        0.6 +
+        0.2 * Math.sin(t * Math.PI * 26) +
+        0.14 * Math.sin(t * Math.PI * 61 + 1.3) +
+        0.1 * Math.sin(t * Math.PI * 127 + 2.1) +
+        0.08 * Math.sin(t * Math.PI * 233 + 0.7) +
+        0.12 * (hashNoise(t * 340) - 0.5) +
+        0.1 * (hashNoise(t * 780) - 0.5) +
+        0.07 * (hashNoise(t * 1700) - 0.5);
       d = Math.max(0, Math.min(1, d));
-      // Carve division gaps (smoothstep dip so edges aren't hard)
       for (const g of gaps) {
         const dist = Math.abs(t - g.at);
         if (dist < g.width) {
@@ -459,22 +464,30 @@ export class SolarSystem {
           d *= 1 - g.depth * (f * f * (3 - 2 * f));
         }
       }
-      // Soft inner/outer edges
       const edge = Math.min(1, t / 0.04) * Math.min(1, (1 - t) / 0.05);
-      // Per-sample alpha grain: particulate, dusty translucency (not uniform fill)
-      const grain = 0.78 + 0.44 * hashNoise(t * 911 + 5.7);
-      const a = Math.max(0, Math.min(1, d * edge * grain)) * opacity;
-      // Denser ringlets read a touch brighter; a little grain in luminance too
-      const shade = 0.72 + 0.42 * d + 0.06 * (hashNoise(t * 733) - 0.5);
-      const r = Math.min(255, base.r * 255 * shade);
-      const gc = Math.min(255, base.g * 255 * shade);
-      const b = Math.min(255, base.b * 255 * shade);
-      for (let y = 0; y < h; y++) {
+      radDensity[x] = d * edge;
+      radGrain[x] = hashNoise(t * 911 + 5.7);
+    }
+
+    for (let y = 0; y < h; y++) {
+      const a = y / h; // angle around the ring, 0..1 (periodic → seamless)
+      for (let x = 0; x < w; x++) {
+        const t = x / (w - 1);
+        // Azimuthal clumping: periodic waves (no seam) coupled to radius so the
+        // brightness varies around the ring like real particle density.
+        const az =
+          0.8 +
+          0.13 * Math.sin(a * TWO_PI * 3 + t * 9) +
+          0.08 * Math.sin(a * TWO_PI * 7 + 1.7) +
+          0.05 * Math.sin(a * TWO_PI * 15 + t * 20);
+        const grain = 0.8 + 0.4 * radGrain[x];
+        const alpha = Math.max(0, Math.min(1, radDensity[x] * az * grain)) * opacity;
+        const shade = (0.72 + 0.42 * radDensity[x]) * (0.9 + 0.22 * (az - 0.8));
         const i = (y * w + x) * 4;
-        img.data[i] = r;
-        img.data[i + 1] = gc;
-        img.data[i + 2] = b;
-        img.data[i + 3] = a * 255;
+        img.data[i] = Math.min(255, base.r * 255 * shade);
+        img.data[i + 1] = Math.min(255, base.g * 255 * shade);
+        img.data[i + 2] = Math.min(255, base.b * 255 * shade);
+        img.data[i + 3] = alpha * 255;
       }
     }
     ctx.putImageData(img, 0, 0);
@@ -482,7 +495,7 @@ export class SolarSystem {
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = this.maxAnisotropy;
     tex.wrapS = THREE.ClampToEdgeWrapping;
-    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.RepeatWrapping; // angular axis wraps seamlessly
     this.uploadTexture?.(tex);
     return tex;
   }

@@ -555,6 +555,8 @@ export class AudioEngine {
 
     for (const [id, stem] of this.stems) {
       if (stem.state !== 'ready') continue;
+      // Never evict the focused body's stems — reloading would restart its loop.
+      if (stem.bodyId === this.focusedBodyId) continue;
       if (now - stem.lastActiveTime < STEM_EVICTION_DELAY_MS) continue;
       if (stem.gainNode && stem.gainNode.gain.value > 0.001) continue;
 

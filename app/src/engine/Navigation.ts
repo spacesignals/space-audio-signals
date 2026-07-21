@@ -73,6 +73,8 @@ export class Navigation {
   private travelHoldStart = 0;
   private static readonly TRAVEL_HOLD_RAW = 0.86; // hold near arrival (a brief settle)
   private static readonly TRAVEL_HOLD_MAX_MS = 1500; // never freeze longer than this
+  // Id of the body a click flew to — the audio focus target while orbiting it.
+  private focusBodyId: string | null = null;
 
   // Orbit-on-click state (orbit body before settling)
   private orbitTarget: THREE.Vector3 | null = null;
@@ -187,25 +189,23 @@ export class Navigation {
    * audio so a focused planet plays alone. Travel/departure return false so the
    * mix crossfades normally while moving between bodies.
    */
-  isFocusing(): boolean {
-    return (
-      this.mode === 'orbit-settle' ||
-      this.mode === 'orbit-idle' ||
-      (this.mode === 'smooth-journey' && this.tourPhase === 'orbit')
-    );
-  }
-
   /**
-   * World position of the body the camera is orbiting, or null. Used to resolve
-   * the focused body by its own position — not the camera's nearest body, which
-   * can flip to a moon passing close during orbit and duck the planet in and out.
+   * The body the camera is currently focused on (orbiting after a click, or the
+   * orbit stop of a tour), or null in free flight / while traveling. Tracked by
+   * id — not by nearest body — so a moon swinging close mid-orbit can't steal
+   * focus and pulse the planet's audio.
    */
-  getOrbitTarget(): THREE.Vector3 | null {
-    return this.orbitTarget ? this.orbitTarget.clone() : null;
+  getFocusedBodyId(): string | null {
+    if (this.mode === 'orbit-settle' || this.mode === 'orbit-idle') return this.focusBodyId;
+    if (this.mode === 'smooth-journey' && this.tourPhase === 'orbit') {
+      return this.tourWaypoints[this.tourIndex]?.bodyId ?? null;
+    }
+    return null;
   }
 
   private enterFreeFlight(): void {
     this.mode = 'free-flight';
+    this.focusBodyId = null;
     const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
     this.yaw = euler.y;
     this.pitch = euler.x;
@@ -695,11 +695,13 @@ export class Navigation {
     target: THREE.Vector3,
     bodyVisualRadius?: number,
     duration?: number,
-    readyCheck?: () => boolean
+    readyCheck?: () => boolean,
+    bodyId?: string
   ): void {
     // Arm the audio-readiness gate for whichever travel this resolves into.
     this.travelReadyCheck = readyCheck ?? null;
     this.travelHolding = false;
+    if (bodyId !== undefined) this.focusBodyId = bodyId;
 
     // Mid-flyby: redirect destination without interrupting the arc
     if (this.mode === 'departure-flyby') {

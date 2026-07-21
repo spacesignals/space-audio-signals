@@ -336,12 +336,9 @@ class App {
       this.audioEngine.setBodyPositions(positions);
       this.audioEngine.setTimeDilation(!this.simClock.isLive());
       // While orbiting/focused on a body, duck every other body to silence.
-      // Resolve the focus by the ORBIT TARGET's position (the body being
-      // orbited), not the camera's nearest body — otherwise a moon swinging
-      // close mid-orbit would steal focus and pulse the planet's audio.
-      this.audioEngine.setFocusedBody(
-        this.navigation.isFocusing() ? this.bodyNearestTo(this.navigation.getOrbitTarget(), positions) : null
-      );
+      // Focus is tracked by id in Navigation, so a moon swinging close mid-orbit
+      // can't steal focus and pulse the planet's audio.
+      this.audioEngine.setFocusedBody(this.navigation.getFocusedBodyId());
       this.audioEngine.update(distances);
     }
 
@@ -378,7 +375,7 @@ class App {
     // ready — you should never reach a planet before its sound does.
     if (body) this.audioEngine.prefetchBody(body);
     const readyCheck = body ? () => this.audioEngine.stemsReady(body) : undefined;
-    this.navigation.flyTo(pos, visualRadius, undefined, readyCheck);
+    this.navigation.flyTo(pos, visualRadius, undefined, readyCheck, bodyId);
     if (body) this.hud.showBodyInfo(body);
     // Keep the URL shareable (replaceState: no history spam, no scroll jump)
     if (location.hash !== `#${bodyId}`) {
@@ -392,24 +389,6 @@ class App {
     if (id && BODIES.some(b => b.id === id)) {
       this.focusBody(id);
     }
-  }
-
-  /** Body whose position is closest to a world point (e.g. the orbit target). */
-  private bodyNearestTo(
-    target: THREE.Vector3 | null,
-    positions: Map<string, [number, number, number]>
-  ): string | null {
-    if (!target) return null;
-    let best: string | null = null;
-    let bestD = Infinity;
-    for (const [id, p] of positions) {
-      const dx = p[0] - target.x;
-      const dy = p[1] - target.y;
-      const dz = p[2] - target.z;
-      const d = dx * dx + dy * dy + dz * dz;
-      if (d < bestD) { bestD = d; best = id; }
-    }
-    return best;
   }
 
   /** Compute sorted distances from camera to all bodies. Shared by audio + HUD. */

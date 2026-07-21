@@ -402,7 +402,7 @@ export class SolarSystem {
           // vNormal is view-space, so rotate the world-space sun direction into view space.
           vec3 sunDir = normalize(-vPosW);
           float day = clamp(dot(normalize(vNormal), (viewMatrix * vec4(sunDir, 0.0)).xyz), -1.0, 1.0) * 0.5 + 0.5;
-          float glow = rim * edgeMelt * intensity * (0.25 + 0.75 * day) * 0.75;
+          float glow = rim * edgeMelt * intensity * (0.25 + 0.75 * day) * 0.2;
           gl_FragColor = vec4(glowColor, glow);
         }
       `,

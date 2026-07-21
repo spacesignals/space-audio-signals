@@ -71,8 +71,8 @@ export class Navigation {
   private travelReadyCheck: (() => boolean) | null = null;
   private travelHolding = false;
   private travelHoldStart = 0;
-  private static readonly TRAVEL_HOLD_RAW = 0.72; // hold at this raw progress
-  private static readonly TRAVEL_HOLD_MAX_MS = 8000; // give up waiting after this
+  private static readonly TRAVEL_HOLD_RAW = 0.86; // hold near arrival (a brief settle)
+  private static readonly TRAVEL_HOLD_MAX_MS = 1500; // never freeze longer than this
 
   // Orbit-on-click state (orbit body before settling)
   private orbitTarget: THREE.Vector3 | null = null;

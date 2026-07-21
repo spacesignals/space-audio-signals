@@ -679,8 +679,9 @@ export class AudioEngine {
     if (!this.ctx || !this.started) return true;
     for (const url of config.stems) {
       const stem = this.stems.get(`${config.id}:${url}`);
-      if (!stem) return false;
-      if (stem.state !== 'ready' && stem.state !== 'permanently-failed') return false;
+      // Only ever wait on a stem that is actively downloading/decoding. A missing,
+      // failed, or not-yet-created stem must never stall the arrival.
+      if (stem && stem.state === 'loading') return false;
     }
     return true;
   }
